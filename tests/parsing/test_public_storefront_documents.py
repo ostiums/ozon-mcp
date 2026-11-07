@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from ozon_mcp.parsing.public_storefront import (
+    DEADLINE_VISIBILITY,
     PUBLIC_PAGE_READER,
     assert_reader_is_passive,
     document_from_html,
+    format_public_diagnostics,
     products_from_document,
     snapshot_reserve_ms,
     step_budget_ms,
@@ -39,9 +41,47 @@ def test_public_read_budget_is_shared_not_two_full_timeouts(monkeypatch: pytest.
 
 def test_reader_does_not_touch_secrets_or_the_network() -> None:
     assert_reader_is_passive()
+    assert_reader_is_passive(DEADLINE_VISIBILITY)
+    assert "innerHTML" not in DEADLINE_VISIBILITY
+    assert "cookie" not in DEADLINE_VISIBILITY.lower()
     assert "querySelectorAll" in PUBLIC_PAGE_READER
     assert "application/ld+json" in PUBLIC_PAGE_READER
     assert "script, style, noscript, template, iframe" in PUBLIC_PAGE_READER
+
+
+def test_deadline_probe_line_has_counts_and_no_page_text() -> None:
+    line = format_public_diagnostics(
+        {
+            "title": "HX " + ("x" * 200),
+            "url_class": "ozon-search",
+            "tile_selector_ready": False,
+            "deadline_probe": "measured",
+            "bring_to_front": "ok",
+            "document_visibility": "hidden",
+            "document_focused": False,
+            "paginator": 1,
+            "tile_grids": 1,
+            "tile_roots_attached": 3,
+            "product_anchors_attached": 3,
+            "title_spans_attached": 3,
+            "title_spans_visible": 0,
+            "first_title_visible": False,
+            "counts": {"html_present": False, "tile_roots": 0},
+            "leak": "https://www.ozon.ru/search/?text=secret",
+        }
+    )
+    assert "deadline_probe=measured" in line
+    assert "document_visibility=hidden" in line
+    assert "title_spans_visible=0" in line
+    assert "tile_roots=0" not in line
+    assert "https://" not in line
+    assert "secret" not in line
+    assert len(line.split("title='", 1)[1].split("'", 1)[0]) == 120
+    skipped = format_public_diagnostics(
+        {"title": "present", "url_class": "ozon-search", "tile_selector_ready": False, "deadline_probe": "skipped"}
+    )
+    assert "dom_counts=not_taken" in skipped
+    assert "tile_roots=" not in skipped
 
 
 def test_prices_stay_on_their_own_products() -> None:

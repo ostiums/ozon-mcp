@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import itertools
+
 from ozon_mcp.parsing.public_storefront import products_from_document
+from ozon_mcp.parsing.visible_cards import PUBLIC_TILE_SELECTOR, PUBLIC_TILE_STAGES
 
 GRID = """
 <div data-widget="infiniteVirtualPaginator">
@@ -96,6 +99,13 @@ def test_ambiguous_tile_is_dropped_and_two_headlines_leave_price_unknown() -> No
     assert products[0].title == "Ok"
     assert products[0].displayed_price is None
     assert products[0].url.endswith("/ok-1600000006/")
+
+
+def test_deadline_stages_are_the_same_selector_narrowed() -> None:
+    selectors = [selector for _name, selector in PUBLIC_TILE_STAGES]
+    assert selectors[-1] == PUBLIC_TILE_SELECTOR
+    for earlier, later in itertools.pairwise(selectors):
+        assert later.startswith(earlier)
 
 
 def test_missing_grid_is_not_an_empty_result() -> None:

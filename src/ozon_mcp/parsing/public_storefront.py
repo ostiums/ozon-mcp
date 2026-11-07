@@ -52,6 +52,12 @@ PUBLIC_PAGE_READER = """() => {
   return { title: document.title || "", jsonLd, microdata, html: visible.innerHTML || "" };
 }"""
 
+# Owned-page state at a tile deadline. No markup, URL, cookies, or storage.
+DEADLINE_VISIBILITY: Final = """() => ({
+  visibility: document.visibilityState,
+  focused: document.hasFocus()
+})"""
+
 
 @dataclass
 class PublicProduct:
@@ -122,20 +128,68 @@ def snapshot_counts(html: object) -> dict[str, int | bool]:
     }
 
 
-def format_public_diagnostics(diagnostics: object) -> str:
-    """One stable status line. It never includes markup or the page URL."""
-    if not isinstance(diagnostics, dict):
-        return "diagnostics=missing"
+_PROBE_FIELDS: Final = (
+    "bring_to_front",
+    "document_visibility",
+    "document_focused",
+    "paginator",
+    "tile_grids",
+    "tile_roots_attached",
+    "product_anchors_attached",
+    "title_spans_attached",
+    "title_spans_visible",
+    "first_title_visible",
+)
+_VISIBILITY_VALUES: Final = frozenset({"visible", "hidden", "prerender", "unread"})
+_FRONT_VALUES: Final = frozenset({"ok", "failed", "missing"})
+
+
+def _diagnostic_head(diagnostics: dict[str, Any]) -> str:
     title = diagnostics.get("title")
     title_text = title.strip() if isinstance(title, str) else ""
     if len(title_text) > 120:
         title_text = title_text[:120]
+    ready = bool(diagnostics.get("tile_selector_ready"))
+    return (
+        f"title={title_text!r}; url_class={diagnostics.get('url_class', 'missing')}; "
+        f"tile_selector_ready={ready}"
+    )
+
+
+def _probe_token(field: str, value: object) -> str:
+    """A count or state token. Page text is never copied through."""
+    if value is None:
+        return "not_taken"
+    if field == "document_visibility" and value in _VISIBILITY_VALUES:
+        return str(value)
+    if field == "bring_to_front" and value in _FRONT_VALUES:
+        return str(value)
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return str(value)
+    return "error"
+
+
+def _format_measured_probe(diagnostics: dict[str, Any]) -> str:
+    parts = [f"{field}={_probe_token(field, diagnostics.get(field))}" for field in _PROBE_FIELDS]
+    return "deadline_probe=measured; " + "; ".join(parts)
+
+
+def format_public_diagnostics(diagnostics: object) -> str:
+    """One stable status line. It never includes markup or the page URL."""
+    if not isinstance(diagnostics, dict):
+        return "diagnostics=missing"
+    head = _diagnostic_head(diagnostics)
+    probe = diagnostics.get("deadline_probe")
+    if probe == "skipped":
+        return f"{head}; deadline_probe=skipped; dom_counts=not_taken; html_present=False"
+    if probe == "measured":
+        return f"{head}; {_format_measured_probe(diagnostics)}; html_present=False"
     raw_counts = diagnostics.get("counts")
     counts: dict[str, Any] = raw_counts if isinstance(raw_counts, dict) else {}
     return (
-        f"title={title_text!r}; url_class={diagnostics.get('url_class', 'missing')}; "
-        f"tile_selector_ready={bool(diagnostics.get('tile_selector_ready'))}; "
-        f"html_present={bool(counts.get('html_present'))}; "
+        f"{head}; html_present={bool(counts.get('html_present'))}; "
         f"tile_roots={int(counts.get('tile_roots') or 0)}; "
         f"product_hrefs={int(counts.get('product_hrefs') or 0)}; "
         f"headline_prices={int(counts.get('headline_prices') or 0)}"

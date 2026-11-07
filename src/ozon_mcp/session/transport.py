@@ -45,13 +45,14 @@ from ozon_mcp.constants import (
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
 from ozon_mcp.parsing.public_storefront import (
+    DEADLINE_VISIBILITY,
     PUBLIC_PAGE_READER,
     format_public_diagnostics,
     snapshot_counts,
     step_budget_ms,
     url_class,
 )
-from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR
+from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR, PUBLIC_TILE_STAGES
 from ozon_mcp.session.page_health import classify_page_title, health_message
 from ozon_mcp.session.phone_form import (
     has_separate_russian_prefix,
@@ -215,15 +216,16 @@ def _page_is_closed(page: Any) -> bool:
         return False
 
 
-def _bring_owned_page_forward(page: Any) -> None:
+def _bring_owned_page_forward(page: Any) -> str:
     """Show the page we own. Other tabs are left open and are not read."""
     bring = getattr(page, "bring_to_front", None)
     if bring is None:
-        return
+        return "missing"
     try:
         bring()
     except Exception:
-        return
+        return "failed"
+    return "ok"
 
 
 def _elapsed_ms(started: float) -> int:
@@ -235,7 +237,12 @@ def _is_timeout(exc: BaseException) -> bool:
 
 
 def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
-    """True when the inspected tile is visible before the remaining budget ends."""
+    """True when the first inspected tile is visible before the remaining budget ends.
+
+    ``visible`` means a non-empty bounding box and no ``visibility:hidden``.
+    An attached node with an empty box does not pass. ``.first`` waits for
+    that one node, not for a later match.
+    """
     if timeout_ms <= 0:
         return False
     try:
@@ -243,6 +250,108 @@ def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
     except Exception:
         return False
     return True
+
+
+_STAGE_FIELDS: Final = {
+    "paginator": "paginator",
+    "tile_grids": "tile_grids",
+    "tile_roots": "tile_roots_attached",
+    "product_anchors": "product_anchors_attached",
+    "title_spans": "title_spans_attached",
+}
+
+
+def _immediate_count(page: Any, selector: str) -> int | str:
+    try:
+        return int(page.locator(selector).count())
+    except Exception:
+        return "error"
+
+
+def _budget_left(started: float, total_ms: int) -> bool:
+    return _elapsed_ms(started) < total_ms
+
+
+def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_front: str) -> dict[str, Any]:
+    """Non-waiting attached and visible counts on the owned page.
+
+    ``count`` and ``is_visible`` return immediately. Nothing here waits, and
+    the HTML reader is not evaluated. A stage that would start after the
+    shared budget is ``None`` (not taken), not a measured zero.
+    """
+    measured: dict[str, Any] = {"deadline_probe": "measured", "bring_to_front": brought_to_front}
+    for name, selector in PUBLIC_TILE_STAGES:
+        field = _STAGE_FIELDS[name]
+        measured[field] = _immediate_count(page, selector) if _budget_left(started, total_ms) else None
+    if not _budget_left(started, total_ms):
+        measured["title_spans_visible"] = None
+        measured["first_title_visible"] = None
+        measured["document_visibility"] = "unread"
+        measured["document_focused"] = None
+        return measured
+    try:
+        measured["title_spans_visible"] = int(page.locator(PUBLIC_TILE_SELECTOR).filter(visible=True).count())
+    except Exception:
+        measured["title_spans_visible"] = "error"
+    attached = measured.get("title_spans_attached")
+    if not _budget_left(started, total_ms):
+        measured["first_title_visible"] = None
+    elif attached == 0:
+        measured["first_title_visible"] = False
+    elif isinstance(attached, int) and attached > 0:
+        try:
+            measured["first_title_visible"] = bool(page.locator(PUBLIC_TILE_SELECTOR).first.is_visible())
+        except Exception:
+            measured["first_title_visible"] = "error"
+    else:
+        measured["first_title_visible"] = None
+    if not _budget_left(started, total_ms):
+        measured["document_visibility"] = "unread"
+        measured["document_focused"] = None
+        return measured
+    measured["document_visibility"], measured["document_focused"] = _page_visibility(page)
+    return measured
+
+
+def _page_visibility(page: Any) -> tuple[str, bool | None]:
+    try:
+        state = page.evaluate(DEADLINE_VISIBILITY)
+    except Exception:
+        return "unread", None
+    if not isinstance(state, dict):
+        return "unread", None
+    raw_visibility = state.get("visibility")
+    focused = state.get("focused")
+    visibility = "unread"
+    if raw_visibility in {"visible", "hidden", "prerender"}:
+        visibility = str(raw_visibility)
+    focused_bit = focused if isinstance(focused, bool) else None
+    return visibility, focused_bit
+
+
+def _raise_unread_tile(page: Any, started: float, total_ms: int, brought_to_front: str) -> None:
+    """Deadline error with a bounded probe, or an explicit skipped probe."""
+    if _budget_left(started, total_ms):
+        probe = _measure_deadline(page, started=started, total_ms=total_ms, brought_to_front=brought_to_front)
+        detail = "The HTML snapshot was not taken."
+    else:
+        probe = {"deadline_probe": "skipped", "bring_to_front": brought_to_front}
+        detail = "The deadline probe was not taken."
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    status = {
+        "title": title if isinstance(title, str) else "",
+        "url_class": url_class(getattr(page, "url", "")),
+        "tile_selector_ready": False,
+        **probe,
+    }
+    message = (
+        "Public tile selector was not ready before the deadline. "
+        f"{detail} This is not an empty search result. " + format_public_diagnostics(status)
+    )
+    raise OzonError(message)
 
 
 def _phrase_visible(page: Any, phrase: str) -> bool:
@@ -801,7 +910,7 @@ class OzonSession:
             if self._page is None or _page_is_closed(self._page):
                 message = "Public read has no open owned page. Nothing was read. This is not an empty search result."
                 raise OzonError(message)
-            _bring_owned_page_forward(self._page)
+            brought_to_front = _bring_owned_page_forward(self._page)
             started = time.monotonic()
             total_ms = int(get_settings().public_read_timeout * 1000)
             goto_ms = step_budget_ms(total_ms, _elapsed_ms(started))
@@ -838,12 +947,7 @@ class OzonSession:
                 raise OzonError(message)
             ready = _public_tile_ready(self._page, step_budget_ms(total_ms, _elapsed_ms(started)))
             if not ready and not _empty_phrase_visible(self._page):
-                message = (
-                    "Public tile selector was not ready before the deadline. "
-                    "Nothing was read. This is not an empty search result. "
-                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
-                )
-                raise OzonError(message)
+                _raise_unread_tile(self._page, started, total_ms, brought_to_front)
             self._raise_for_antibot_challenge()
             if _elapsed_ms(started) >= total_ms:
                 message = (

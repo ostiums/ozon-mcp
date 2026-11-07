@@ -31,6 +31,22 @@ PUBLIC_TILE_SELECTOR: Final = (
     "div.tileGridDesktop div.tile-root[data-index] "
     'a[target="_blank"][href^="/product/"] span.tsBody500Medium'
 )
+# Same selector, stopped at each boundary. Counts at a deadline use these.
+# They are not a second parser.
+PUBLIC_TILE_STAGES: Final = (
+    ("paginator", 'div[data-widget="infiniteVirtualPaginator"]'),
+    ("tile_grids", 'div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop'),
+    (
+        "tile_roots",
+        'div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop div.tile-root[data-index]',
+    ),
+    (
+        "product_anchors",
+        ('div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop '
+        'div.tile-root[data-index] a[target="_blank"][href^="/product/"]'),
+    ),
+    ("title_spans", PUBLIC_TILE_SELECTOR),
+)
 
 
 @dataclass
