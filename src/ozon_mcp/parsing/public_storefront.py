@@ -46,7 +46,9 @@ PUBLIC_PAGE_READER = """() => {
     if (prices.length === 1) props.price = prices[0];
     microdata.push({ type: scope.getAttribute("itemtype") || "", props, nested: false });
   }
-  return { title: document.title || "", jsonLd, microdata };
+  const visible = document.body ? document.body.cloneNode(true) : document.createElement("div");
+  visible.querySelectorAll("script, style, noscript, template, iframe").forEach((node) => node.remove());
+  return { title: document.title || "", jsonLd, microdata, html: visible.innerHTML || "" };
 }"""
 
 
@@ -58,10 +60,22 @@ class PublicProduct:
     url: str
     title: str | None = None
     price: str | None = None
+    price_regular: str | None = None
+    price_old: str | None = None
+    displayed_price: str | None = None
     available: bool | None = None
     description: str | None = None
     characteristics: list[Characteristic] = field(default_factory=list)
     variants: list[Variant] = field(default_factory=list)
+
+
+def product_link(href: str) -> tuple[str, str] | None:
+    """Own Ozon product URL and its SKU, or nothing when they disagree."""
+    url = _product_url(href)
+    sku = _sku(None, url)
+    if url is None or sku is None:
+        return None
+    return url, sku
 
 
 def assert_reader_is_passive(script: str = PUBLIC_PAGE_READER) -> None:
@@ -78,7 +92,7 @@ def document_from_html(markup: str) -> dict[str, Any]:
     parser = _PageParser()
     parser.feed(markup)
     parser.close()
-    return {"title": parser.title, "jsonLd": parser.json_ld, "microdata": parser.microdata}
+    return {"title": parser.title, "jsonLd": parser.json_ld, "microdata": parser.microdata, "html": markup}
 
 
 def products_from_document(document: dict[str, Any]) -> list[PublicProduct] | None:
@@ -87,10 +101,15 @@ def products_from_document(document: dict[str, Any]) -> list[PublicProduct] | No
     None means the page had no product list. An empty list means it declared one
     and the list was empty. Callers must not treat None as "no search hits".
     """
+    from ozon_mcp.parsing.visible_cards import visible_products  # ruff: ignore[import-outside-top-level]
+
     found, saw_list = _json_ld_products(document.get("jsonLd") or [])
     found.extend(_microdata_products(document.get("microdata") or []))
+    html = document.get("html")
+    visible, saw_empty = visible_products(html if isinstance(html, str) else "")
+    found = _merge(found, visible)
     if not found and not saw_list:
-        return None
+        return [] if saw_empty else None
     return _dedupe(found)
 
 
@@ -306,20 +325,51 @@ def _variants(raw: object) -> list[Variant]:
     return [Variant(name=name, options=options) for name, options in grouped.items()]
 
 
-def _dedupe(products: list[PublicProduct]) -> list[PublicProduct]:
-    by_sku: dict[str, PublicProduct] = {}
-    for product in products:
+def _merge(primary: list[PublicProduct], extra: list[PublicProduct]) -> list[PublicProduct]:
+    by_sku = {product.sku: product for product in primary}
+    ordered = list(primary)
+    for product in extra:
         current = by_sku.get(product.sku)
         if current is None:
             by_sku[product.sku] = product
+            ordered.append(product)
             continue
-        if current.price != product.price:
-            current.price = None
-        if current.title != product.title:
-            current.title = None
-        if current.url != product.url:
-            current.url = _product_url(f"/product/{product.sku}/") or current.url
-    return list(by_sku.values())
+        _fill_gap(current, product)
+    return ordered
+
+
+def _fill_gap(current: PublicProduct, extra: PublicProduct) -> None:
+    current.price = _prefer(current.price, extra.price)
+    current.price_regular = _prefer(current.price_regular, extra.price_regular)
+    current.price_old = _prefer(current.price_old, extra.price_old)
+    current.displayed_price = _prefer(current.displayed_price, extra.displayed_price)
+    if current.title is None:
+        current.title = extra.title
+    elif extra.title is not None and current.title != extra.title:
+        current.title = None
+    if not current.characteristics:
+        current.characteristics = extra.characteristics
+    if not current.variants:
+        current.variants = extra.variants
+
+
+def _prefer(current: str | None, extra: str | None) -> str | None:
+    if current is None:
+        return extra
+    if extra is None or _same_amount(current, extra):
+        return current
+    return None
+
+
+def _same_amount(left: str, right: str) -> bool:
+    from ozon_mcp.utils.money import to_kopecks  # ruff: ignore[import-outside-top-level]
+
+    first, second = to_kopecks(left), to_kopecks(right)
+    return first is not None and first == second
+
+
+def _dedupe(products: list[PublicProduct]) -> list[PublicProduct]:
+    return _merge([], products)
 
 
 class _PageParser(HTMLParser):

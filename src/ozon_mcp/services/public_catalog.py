@@ -61,6 +61,9 @@ def product_public(sku: str) -> ProductCard:
         title=product.title,
         sku=product.sku,
         price=product.price,
+        price_regular=product.price_regular,
+        price_old=product.price_old,
+        displayed_price=product.displayed_price,
         available=product.available,
         variants=product.variants,
         characteristics=product.characteristics,
@@ -73,7 +76,9 @@ def _declared_products(path: str) -> list[PublicProduct]:
     products = products_from_document(document if isinstance(document, dict) else {})
     if products is None:
         message = (
-            "Public storefront page has no declared product list. Nothing was read. This is not an empty search result."
+            "Public storefront page has no declared product list. Nothing was read. "
+            "This is not an empty search result. No schema.org product and no visible "
+            "link to /product/<sku>/ were found."
         )
         raise OzonError(message)
     return products
@@ -91,7 +96,15 @@ def _search_path(query: str | None, category: str | None, sort: str, page: int) 
 
 
 def _tile(product: PublicProduct) -> Tile:
-    return Tile(sku=product.sku, title=product.title, price=product.price, url=product.url)
+    return Tile(
+        sku=product.sku,
+        title=product.title,
+        price=product.price,
+        price_regular=product.price_regular,
+        price_old=product.price_old,
+        displayed_price=product.displayed_price,
+        url=product.url,
+    )
 
 
 def _sort_key(tile: Tile, *, descending: bool) -> tuple[bool, int]:

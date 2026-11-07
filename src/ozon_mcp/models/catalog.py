@@ -15,6 +15,14 @@ class Tile(OzonModel):
     )
     price_regular: str | None = Field(default=None, description="Ozon's «С другими банками» price, when it differs.")
     price_old: str | None = Field(default=None, description="The struck-through price Ozon compares against.")
+    displayed_price: str | None = Field(
+        default=None,
+        description=(
+            "The amount printed on a public search tile. It is not «С банками» or "
+            "«С другими банками» unless that label is visible, and those labels were not "
+            "present on the inspected tile."
+        ),
+    )
     url: str | None = None
     seller: str | None = Field(default=None, description="Set on offers from other sellers, which carry no title.")
     delivery: str | None = Field(default=None, description='Ozon\'s own line, e.g. "Доставим 9 сентября".')
@@ -155,6 +163,10 @@ class ProductCard(OzonModel):
     )
     price_regular: str | None = Field(default=None, description="Ozon's «С другими банками» price.")
     price_old: str | None = Field(default=None, description="The struck-through price Ozon compares against.")
+    displayed_price: str | None = Field(
+        default=None,
+        description="The amount printed on the public page when its price role was not labeled.",
+    )
     available: bool | None = Field(default=None, description="Whether Ozon offers it for sale at all.")
     rating: float | None = Field(default=None, description="The rating Ozon prints on the card, e.g. 4.9.")
     reviews_count: int | None = Field(default=None, description="How many reviews it has; get_reviews() reads them.")

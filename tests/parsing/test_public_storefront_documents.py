@@ -20,6 +20,7 @@ def test_reader_does_not_touch_secrets_or_the_network() -> None:
     assert_reader_is_passive()
     assert "querySelectorAll" in PUBLIC_PAGE_READER
     assert "application/ld+json" in PUBLIC_PAGE_READER
+    assert "script, style, noscript, template, iframe" in PUBLIC_PAGE_READER
 
 
 def test_prices_stay_on_their_own_products() -> None:

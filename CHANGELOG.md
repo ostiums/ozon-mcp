@@ -9,7 +9,7 @@ Notable changes are documented here. The format follows
 ### Added
 
 - Optional `OZON_BROWSER_CHANNEL=chrome` selects the installed stable Chrome channel. The default remains Playwright's Chromium.
-- `OZON_STOREFRONT=public` reads search and product cards from schema.org JSON-LD or microdata in the existing browser. The default remains `composer`. Public mode does not call the composer API and does not fall back to it. Live pages were not checked.
+- `OZON_STOREFRONT=public` reads search tiles from the existing browser. A tile is `div.tile-root[data-index]` inside `div.tileGridDesktop` in `div[data-widget=infiniteVirtualPaginator]`. The title is `span.tsBody500Medium` in the product link. The printed amount is `span.tsHeadline500Medium` in that same tile and is returned as `displayed_price`, not as the «С банками» price. Hashed classes are ignored. Schema.org data is still used when present. The default remains `composer`. Live pages were not checked.
 - Optional `OZON_PROXY_URL` is the only proxy, shared by the browser and the HTTP client. `trust_env` is false. With no URL, libcurl is given an empty proxy so it does not inherit `http_proxy`. `OZON_PROXY_REMOTE_DNS` adds Chromium remote-DNS rules that exclude only the proxy host.
 - Redirect responses name a fixed host and path class. The destination, query and headers are not included, and no redirect is followed.
 - `OZON_SHUTDOWN_TIMEOUT` bounds the wait for session close. SIGTERM closes stdio's input so a blocked read can return. Neither was retested on a deployed process.
