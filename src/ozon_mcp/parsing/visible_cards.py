@@ -16,7 +16,7 @@ from typing import Final, override
 
 from ozon_mcp.parsing.public_storefront import PublicProduct, product_link
 
-_EMPTY_RESULT: Final = (
+EMPTY_RESULT_PHRASES: Final = (
     "ничего не нашлось",
     "по вашему запросу товаров не найдено",
     "товары не найдены",
@@ -25,6 +25,12 @@ _SKIP_TAGS: Final = frozenset({"script", "style", "noscript", "template", "ifram
 _VOID_TAGS: Final = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"})
 _TITLE_CLASS: Final = "tsBody500Medium"
 _PRICE_CLASS: Final = "tsHeadline500Medium"
+# The inspected public card. Hashed classes are intentionally absent.
+PUBLIC_TILE_SELECTOR: Final = (
+    'div[data-widget="infiniteVirtualPaginator"] '
+    "div.tileGridDesktop div.tile-root[data-index] "
+    'a[target="_blank"][href^="/product/"] span.tsBody500Medium'
+)
 
 
 @dataclass
@@ -121,7 +127,7 @@ def _has_class(node: _Node, name: str) -> bool:
 
 def _states_empty(text: str) -> bool:
     folded = " ".join(text.casefold().split())
-    return any(phrase in folded for phrase in _EMPTY_RESULT)
+    return any(phrase in folded for phrase in EMPTY_RESULT_PHRASES)
 
 
 def _text(node: _Node) -> str:

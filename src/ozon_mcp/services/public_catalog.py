@@ -6,7 +6,11 @@ from ozon_mcp.constants import SEARCH_SORTS
 from ozon_mcp.dependencies import get_session
 from ozon_mcp.errors import OzonError
 from ozon_mcp.models.catalog import ProductCard, Tile
-from ozon_mcp.parsing.public_storefront import PublicProduct, products_from_document
+from ozon_mcp.parsing.public_storefront import (
+    PublicProduct,
+    format_public_diagnostics,
+    products_from_document,
+)
 from ozon_mcp.settings import get_settings
 from ozon_mcp.utils.money import to_kopecks
 
@@ -73,12 +77,15 @@ def product_public(sku: str) -> ProductCard:
 
 def _declared_products(path: str) -> list[PublicProduct]:
     document = get_session().read_public_page(path)
-    products = products_from_document(document if isinstance(document, dict) else {})
+    if not isinstance(document, dict):
+        document = {}
+    products = products_from_document(document)
     if products is None:
         message = (
             "Public storefront page has no declared product list. Nothing was read. "
             "This is not an empty search result. No schema.org product and no visible "
-            "link to /product/<sku>/ were found."
+            "link to /product/<sku>/ were found. "
+            + format_public_diagnostics(document.get("diagnostics"))
         )
         raise OzonError(message)
     return products

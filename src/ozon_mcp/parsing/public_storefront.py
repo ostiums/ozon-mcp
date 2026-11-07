@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from ozon_mcp.models.catalog import Characteristic, Variant, VariantOption
 
-_PRODUCT_URL: Final = re.compile(r"/product/(?:[a-z0-9-]*-)?(\d{6,})/?$")
+_PRODUCT_URL: Final = re.compile(r"/product/(?:[^/]*-)?(\d{6,})/?$")
 _ORIGIN = "https://www.ozon.ru"
 
 # The browser only copies schema.org nodes. It does not read cookies, storage,
@@ -67,6 +67,60 @@ class PublicProduct:
     description: str | None = None
     characteristics: list[Characteristic] = field(default_factory=list)
     variants: list[Variant] = field(default_factory=list)
+
+
+def url_class(url: object) -> str:
+    """Classify a page URL without returning the URL or its query."""
+    kind = "ozon-other"
+    if not isinstance(url, str) or not url.strip() or url.strip() == "about:blank":
+        kind = "about:blank"
+    else:
+        parsed = urlsplit(url.strip())
+        host = (parsed.hostname or "").lower()
+        path = parsed.path or "/"
+        if parsed.scheme == "about" or (not parsed.scheme and not parsed.netloc):
+            kind = "about:blank"
+        elif host != "www.ozon.ru":
+            kind = "external"
+        elif path == "/search" or path.startswith("/search/"):
+            kind = "ozon-search"
+        elif path.startswith("/product/"):
+            kind = "ozon-product"
+        elif path == "/":
+            kind = "ozon-home"
+    return kind
+
+
+def snapshot_counts(html: object) -> dict[str, int | bool]:
+    """Counts only. The markup itself is not returned."""
+    if not isinstance(html, str) or not html:
+        return {"html_present": False, "tile_roots": 0, "product_hrefs": 0, "headline_prices": 0}
+    return {
+        "html_present": True,
+        "tile_roots": len(re.findall(r"\btile-root\b", html)),
+        "product_hrefs": len(re.findall(r"""href=["'](?:https://www\.ozon\.ru)?/product/""", html)),
+        "headline_prices": html.count("tsHeadline500Medium"),
+    }
+
+
+def format_public_diagnostics(diagnostics: object) -> str:
+    """One stable status line. It never includes markup or the page URL."""
+    if not isinstance(diagnostics, dict):
+        return "diagnostics=missing"
+    title = diagnostics.get("title")
+    title_text = title.strip() if isinstance(title, str) else ""
+    if len(title_text) > 120:
+        title_text = title_text[:120]
+    raw_counts = diagnostics.get("counts")
+    counts: dict[str, Any] = raw_counts if isinstance(raw_counts, dict) else {}
+    return (
+        f"title={title_text!r}; url_class={diagnostics.get('url_class', 'missing')}; "
+        f"tile_selector_ready={bool(diagnostics.get('tile_selector_ready'))}; "
+        f"html_present={bool(counts.get('html_present'))}; "
+        f"tile_roots={int(counts.get('tile_roots') or 0)}; "
+        f"product_hrefs={int(counts.get('product_hrefs') or 0)}; "
+        f"headline_prices={int(counts.get('headline_prices') or 0)}"
+    )
 
 
 def product_link(href: str) -> tuple[str, str] | None:

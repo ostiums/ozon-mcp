@@ -44,7 +44,13 @@ from ozon_mcp.constants import (
     WIDGET_URL,
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
-from ozon_mcp.parsing.public_storefront import PUBLIC_PAGE_READER
+from ozon_mcp.parsing.public_storefront import (
+    PUBLIC_PAGE_READER,
+    format_public_diagnostics,
+    snapshot_counts,
+    url_class,
+)
+from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR
 from ozon_mcp.session.page_health import classify_page_title, health_message
 from ozon_mcp.session.phone_form import (
     has_separate_russian_prefix,
@@ -196,6 +202,69 @@ def _redirect_classes(location: str, request_url: str) -> str:
     else:
         path_class = "other-path"
     return f"host={host_class}; path={path_class}."
+
+
+def _page_is_closed(page: Any) -> bool:
+    closed = getattr(page, "is_closed", None)
+    if closed is None:
+        return False
+    try:
+        return bool(closed())
+    except Exception:
+        return False
+
+
+def _bring_owned_page_forward(page: Any) -> None:
+    """Show the page we own. Other tabs are left open and are not read."""
+    bring = getattr(page, "bring_to_front", None)
+    if bring is None:
+        return
+    try:
+        bring()
+    except Exception:
+        return
+
+
+def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
+    """True when the inspected tile is visible before the budget ends."""
+    try:
+        page.locator(PUBLIC_TILE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
+    except Exception:
+        return False
+    return True
+
+
+def _phrase_visible(page: Any, phrase: str) -> bool:
+    getter = getattr(page, "get_by_text", None)
+    if getter is None:
+        return False
+    try:
+        located = getter(phrase, exact=False)
+    except Exception:
+        return False
+    try:
+        return bool(located.count() and located.first.is_visible())
+    except Exception:
+        return False
+
+
+def _empty_phrase_visible(page: Any) -> bool:
+    return any(_phrase_visible(page, phrase) for phrase in EMPTY_RESULT_PHRASES)
+
+
+def _status(page: Any, *, ready: bool, data: dict[str, Any]) -> dict[str, Any]:
+    title = data.get("title")
+    if not isinstance(title, str):
+        try:
+            title = page.title()
+        except Exception:
+            title = ""
+    return {
+        "title": title if isinstance(title, str) else "",
+        "url_class": url_class(getattr(page, "url", "")),
+        "tile_selector_ready": ready,
+        "counts": snapshot_counts(data.get("html")),
+    }
 
 
 def _public_catalog_path(path: str) -> str:
@@ -704,10 +773,12 @@ class OzonSession:
 
     # -- DOM reads (need the browser) ----------------------------------------
     def read_public_page(self, path: str) -> dict[str, Any]:
-        """Open one public catalog path in the existing browser and read schema.org data.
+        """Open one public catalog path on the owned page and read that page only.
 
-        Navigation uses the browser's own page load. Composer redirects are not
-        followed. An unhealthy title raises and does not fall back to the API.
+        Restored tabs and popups are not adopted. ``goto`` and ``evaluate`` use
+        the same page object. A foreground about:blank tab is not evidence of
+        what this page contained. The tile selector is waited for within the
+        browser budget; a fixed sleep is not used. Live timing is unmeasured.
         """
         checked = _public_catalog_path(path)
         with self._lock:
@@ -715,15 +786,37 @@ class OzonSession:
                 message = "login is in progress; finish it before reading the storefront"
                 raise OzonError(message)
             self._ensure_browser()
+            if self._page is None or _page_is_closed(self._page):
+                message = "Public read has no open owned page. Nothing was read. This is not an empty search result."
+                raise OzonError(message)
+            _bring_owned_page_forward(self._page)
             self._page.goto(HOME_URL.rstrip("/") + checked, wait_until="domcontentloaded", timeout=self._browser_ms())
-            self._page.wait_for_timeout(6_000)
+            self._raise_for_antibot_challenge()
+            owned_class = url_class(getattr(self._page, "url", ""))
+            if owned_class == "about:blank":
+                message = (
+                    "Public read navigated the owned page and it is still about:blank. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message)
+            ready = _public_tile_ready(self._page, self._browser_ms())
+            if not ready and not _empty_phrase_visible(self._page):
+                message = (
+                    "Public tile selector was not ready before the deadline. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message)
             self._raise_for_antibot_challenge()
             self._last_used = time.time()
             data = self._page.evaluate(PUBLIC_PAGE_READER)
         if not isinstance(data, dict):
             message = "Public storefront page did not return a document. Nothing was read."
             raise OzonError(message)
-        return data
+        result = dict(data)
+        result["diagnostics"] = _status(self._page, ready=ready, data=result)
+        return result
 
     def page_extract(self, path: str, js: str, *, scroll: bool = False) -> Any:
         """Navigate to ``path`` and evaluate ``js`` against the rendered DOM.
