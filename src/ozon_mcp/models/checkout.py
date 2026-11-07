@@ -154,6 +154,10 @@ class Checkout(OzonModel):
 
     available: bool = False
     reason: str | None = None
+    selected_items: dict[str, int] | None = Field(
+        default=None,
+        description="Selected cart SKU-to-quantity mapping to confirm before ordering; null means incomplete contents.",
+    )
     payment_options: list[PaymentOption] = Field(default_factory=list)
     pay_after_receipt: PayAfterReceipt = Field(default_factory=PayAfterReceipt)
     installment: str | None = None

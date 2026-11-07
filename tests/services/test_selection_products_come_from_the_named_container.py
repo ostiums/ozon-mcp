@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
+from ozon_mcp.errors import OzonError
 from ozon_mcp.services import selections
 from support import page
 
@@ -79,3 +82,14 @@ def test_removing_sends_what_should_remain(session: FakeSession, writes_on: None
     selections.remove_from_selection(UUID, ["489647252"])
     _, body = session.performed[0]
     assert body["productIds"] == ["921329480"]
+
+
+@pytest.mark.parametrize("change", [selections.add_to_selection, selections.remove_from_selection])
+@pytest.mark.parametrize("skus", [("489647252",), ("489647252", "489647252")])
+def test_a_partial_read_cannot_replace_the_whole_selection(
+    session: FakeSession, writes_on: None, change: Any, skus: tuple[str, ...]
+) -> None:
+    _wired(session, _grid(*skus))
+    with pytest.raises(OzonError, match="incomplete"):
+        change(UUID, ["489647252", "998239133"])
+    assert session.performed == []

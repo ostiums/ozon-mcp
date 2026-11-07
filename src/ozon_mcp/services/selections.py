@@ -97,6 +97,7 @@ def get_selection(uuid: str) -> Selection:
     right: dict[str, Any] = cell.get("rightBlock") or {} if isinstance(cell, dict) else {}
     control: dict[str, Any] = right.get("control") or {} if isinstance(right, dict) else {}
     toggle = control.get("toggle") if isinstance(control, dict) else None
+    public = toggle.get("isSelected") if isinstance(toggle, dict) else None
     title_area: dict[str, Any] = fields.get("titleArea") or {}
     description_area: dict[str, Any] = fields.get("descriptionArea") or {}
     title = title_area.get("text") if isinstance(title_area, dict) else None
@@ -105,7 +106,7 @@ def get_selection(uuid: str) -> Selection:
         update={
             "name": str(title) if isinstance(title, str) else listed.name,
             "description": str(description) if isinstance(description, str) else None,
-            "public": bool(toggle.get("isSelected")) if isinstance(toggle, dict) else None,
+            "public": public if isinstance(public, bool) else None,
         }
     )
 
@@ -140,13 +141,19 @@ def selection_products(uuid: str) -> list[Tile]:
             _ITEMS_PATH.format(uuid=uuid, index=index, start=start.group(1), owner=listed.owner_id or ""),
             backend="entrypoint",
         )
-        fresh = [tile for tile in parse_tiles(page) if tile.sku and tile.sku not in seen]
+        fresh: list[Tile] = []
+        for tile in parse_tiles(page):
+            if tile.sku and tile.sku not in seen:
+                seen.add(tile.sku)
+                fresh.append(tile)
         if not fresh:
             break
-        seen.update(tile.sku for tile in fresh if tile.sku)
         products += fresh
         if listed.items and len(products) >= listed.items:
             break
+    if listed.items is not None and len(products) != listed.items:
+        msg = f"selection {uuid} has an incomplete product list: read {len(products)} of {listed.items}"
+        raise OzonError(msg)
     return products
 
 
@@ -202,6 +209,12 @@ def edit_selection(uuid: str, name: str, description: str | None = None) -> Sele
     """
     _require_writes()
     current = get_selection(str(uuid))
+    if current.public is None:
+        msg = f"could not read selection {uuid}'s visibility; refusing to change it while editing"
+        raise OzonError(msg)
+    if description is None and current.description is None:
+        msg = f"could not read selection {uuid}'s description; pass an explicit description to replace it"
+        raise OzonError(msg)
     response = get_session().action(
         _SUBMIT_ACTION,
         {
@@ -291,6 +304,9 @@ def set_selection_public(uuid: str, *, public: bool) -> Selection:
     """
     _require_writes()
     current = get_selection(str(uuid))
+    if current.public is None:
+        msg = f"could not read selection {uuid}'s visibility; refusing to toggle an unknown state"
+        raise OzonError(msg)
     if current.public is public:
         return current
     response = get_session().action(_PUBLIC_ACTION, {"selectionUuid": str(uuid)})

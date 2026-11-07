@@ -26,11 +26,13 @@ class ListRef(OzonModel):
 
 
 class PriceChange(OzonModel):
+    """A price change in rubles, including kopecks."""
+
     sku: str
     title: str | None = None
-    was: int
-    now: int
-    delta: int
+    was: float
+    now: float
+    delta: float
 
 
 class PriceDiff(OzonModel):

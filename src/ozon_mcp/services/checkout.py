@@ -19,7 +19,7 @@ from typing import Any, Final
 from uuid import uuid4
 
 from ozon_mcp.dependencies import get_session
-from ozon_mcp.errors import OrdersDisabledError, OzonError, TotalMismatchError
+from ozon_mcp.errors import OrdersDisabledError, OzonError, TotalMismatchError, WritesDisabledError
 from ozon_mcp.models.checkout import Checkout, Delivery, OrderPlaced, PaymentOption, PickupPoint
 from ozon_mcp.models.enums import PostPaymentScope
 from ozon_mcp.parsing.checkout import (
@@ -52,6 +52,10 @@ _ENTRY_PATH: Final = (
 # re-calls the same action until the response carries the result instead of
 # another polling instruction.
 _ORDER_POLL_ATTEMPTS: Final = 40
+_MAX_ORDER_POLL_DELAY_MS: Final = 30_000
+# Confirmations are complete, nonnegative rouble amounts, not arbitrary text
+# from which digits can be extracted. Conversion still uses the shared parser.
+_CONFIRM_MONEY_RE: Final = re.compile(r"[0-9]+(?:[ \u00a0\u202f\u2009][0-9]{3})*(?:,[0-9]{1,2})?\s*₽?")
 # Attributing the prepayment is a subset sum over shipments; an order with more
 # than a dozen of them is not worth enumerating.
 _SUBSET_LIMIT: Final = 12
@@ -233,33 +237,31 @@ def _match_pickup(points: list[PickupPoint], wanted: str) -> PickupPoint:
 def _match_payment_option(options: list[PaymentOption], wanted: str) -> PaymentOption:
     """Resolve a payment method from a word, a masked card, or the raw id."""
     needle = wanted.strip().casefold()
-    known_types = {option.payment_type for option in options if option.payment_type is not None}
     selectable = [option for option in options if option.apply_link or option.selected]
     options = selectable or options
-    # A bare number is an id only if the order actually offers it; otherwise it
-    # is a card number, which can look just as short (2044 vs 5898).
+    known_types = {option.payment_type for option in options if option.payment_type is not None}
+    # Match in specificity order, but never choose an arbitrary card when
+    # several share a type, bank name or even the same last four digits.
+    matches: list[PaymentOption] = []
     if needle.isdigit() and int(needle) in known_types:
-        return next(option for option in options if option.payment_type == int(needle))
-
-    # A masked card: compare digits only, since Ozon writes the label "** 5898".
+        matches = [option for option in options if option.payment_type == int(needle)]
     digits = "".join(ch for ch in needle if ch.isdigit())
-    if digits:
-        for option in options:
-            label_digits = "".join(ch for ch in (option.label or "") if ch.isdigit())
-            if label_digits and label_digits == digits and option.payment_type is not None:
-                return option
-
+    if not matches and digits:
+        matches = [option for option in options if "".join(ch for ch in (option.label or "") if ch.isdigit()) == digits]
     target_kind = next((kind for alias, kind in _PAYMENT_ALIASES.items() if alias in needle), None)
-    for option in options:
-        kind = (option.kind or "").casefold()
-        label = (option.label or "").casefold()
-        # Not every method has a payment_type — Ozon Card, the credit card and
-        # instalments are identified by their link alone — so requiring one here
-        # would hide exactly the methods a person names most often.
-        if target_kind and kind == target_kind:
-            return option
-        if needle and (needle in kind or needle in label):
-            return option
+    if not matches and target_kind:
+        matches = [option for option in options if (option.kind or "").casefold() == target_kind]
+    if not matches and needle:
+        matches = [
+            option
+            for option in options
+            if needle in (option.kind or "").casefold() or needle in (option.label or "").casefold()
+        ]
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        msg = f"{wanted!r} matches several payment methods; use a unique masked card or method selector"
+        raise OzonError(msg)
 
     known = "; ".join(f"{o.payment_type}={o.kind or ''} {o.label or ''}".strip() for o in options)
     msg = f"no payment method matches {wanted!r}; available: {known}"
@@ -312,10 +314,23 @@ def start_checkout(*, with_points: bool = True, with_shipments: bool | None = No
     """Form the checkout from the items currently ticked in the cart."""
     from ozon_mcp.services.cart import get_cart  # ruff: ignore[import-outside-top-level] - avoids a cycle
 
-    if not any(item.checked for item in get_cart().items):
+    cart = get_cart()
+    selected = [item for item in cart.items if item.checked]
+    if not selected:
         return Checkout(available=False, reason="no cart items are selected — select them first")
+    # Unknown lines or a truncated cart cannot safely confirm the composition.
+    complete = (cart.total_items is None or cart.total_items == len(cart.items)) and all(
+        item.checked is not None for item in cart.items
+    )
+    known = all(
+        item.id and item.id.isascii() and item.id.isdigit() and item.quantity is not None and item.quantity > 0
+        for item in selected
+    ) and len({item.id for item in selected}) == len(selected)
     _enter_checkout()
-    return _read(with_points=with_points, with_shipments=with_shipments)
+    checkout = _read(with_points=with_points, with_shipments=with_shipments)
+    if complete and known:
+        checkout.selected_items = {item.id: item.quantity for item in selected if item.id and item.quantity is not None}
+    return checkout
 
 
 def get_checkout(shipment_items: bool | None = None) -> Checkout:
@@ -342,11 +357,14 @@ def configure_checkout(
     change what payment is possible), then payment, then the pay-on-delivery
     switch, then points.
     """
+    if not get_settings().enable_writes:
+        raise WritesDisabledError
     # Same entry point as get_checkout: Ozon may not have formed the order yet,
     # and a plain read of an unformed checkout reports every option as absent.
     checkout = get_checkout()
     if not checkout.available:
         return checkout
+    selected_items = checkout.selected_items
 
     if pickup_point is not None:
         delivery = _target_delivery(checkout, split_key)
@@ -359,15 +377,17 @@ def configure_checkout(
         checkout = _apply(link)
     if payment is not None:
         option = _match_payment_option(checkout.payment_options, payment)
-        # Ozon drops the link from the method already in use, so its absence
-        # means "already selected", not "cannot be selected".
-        if option.apply_link and not option.selected:
+        if not option.selected:
+            if not option.apply_link:
+                raise OzonError("the requested payment method is not selectable")
             checkout = _apply(option.apply_link)
     if pay_after_receipt is not None:
         checkout = _set_pay_after_receipt(checkout, enabled=pay_after_receipt)
     if points is not None:
         checkout = _set_points(checkout, points)
-    return _read()
+    result = _read()
+    result.selected_items = selected_items
+    return result
 
 
 def _set_pay_after_receipt(checkout: Checkout, *, enabled: bool) -> Checkout:
@@ -381,41 +401,38 @@ def _set_pay_after_receipt(checkout: Checkout, *, enabled: bool) -> Checkout:
         raise OzonError(msg)
     # The link flips whatever state it finds, so press it only when the current
     # state is not the one asked for.
-    if switch.enabled == enabled or not switch.toggle_link:
+    if switch.enabled == enabled:
         return checkout
+    if not switch.toggle_link:
+        raise OzonError("the requested pay-on-delivery state is not selectable")
     return _apply(switch.toggle_link)
 
 
 def _set_points(checkout: Checkout, points: int) -> Checkout:
     """Spend a given number of points, or none at all when passed 0.
 
-    Ozon drops the apply link from whichever choice is already active, so a
-    missing link means "already there" far more often than "not allowed" —
-    treating it as an error would refuse a request that is in fact satisfied.
+    The selected flag establishes whether the choice is already active. A
+    missing control on an unselected choice must not silently claim success.
     """
     wanted = next((option for option in checkout.points if (option.amount or 0) == points), None)
     if wanted is None:
         offered = ", ".join(str(option.amount or 0) for option in checkout.points)
         msg = f"Ozon does not offer spending {points} points here; offered: {offered or 'none'}"
         raise OzonError(msg)
-    if wanted.selected or not wanted.apply_link:
+    if wanted.selected:
         return checkout
+    if not wanted.apply_link:
+        raise OzonError("the requested points choice is not selectable")
     return _apply(wanted.apply_link)
 
 
-def _digits(value: str | None) -> str:
-    return "".join(ch for ch in (value or "") if ch.isdigit())
+def place_order(confirm_total: str, confirm_items: dict[str, int]) -> OrderPlaced:
+    """Submit only the full cost and item quantities the caller confirmed.
 
-
-def place_order(confirm_total: str) -> OrderPlaced:
-    """Submit the order — this spends money and is not undoable from here.
-
-    ``confirm_total`` must match what Ozon is charging, so a stale plan cannot
-    silently pay a different amount. Either figure is accepted — what the order
-    costs (``order_total``) or what is charged today (``total``) — because on a
-    deferred order today's charge is 0 ₽, and requiring that one would have the
-    caller confirm "0 ₽" for an order of several thousand. Compared on digits
-    only, since the strings carry spaces, ₽ and a "сегодня" suffix.
+    ``confirm_total`` must match ``totals.order_total`` in kopecks. Today's
+    charge is never a substitute, because it can be zero on a deferred order.
+    ``confirm_items`` must match the selected SKU-to-quantity mapping returned
+    by the checkout; an equal-priced replacement must be confirmed again too.
 
     Creation is asynchronous: the action is re-called until it returns the order
     instead of another polling instruction, so this comes back only once the
@@ -434,16 +451,40 @@ def place_order(confirm_total: str) -> OrderPlaced:
     if not checkout.available:
         msg = checkout.reason or "no order to place"
         raise OzonError(msg)
-    actual = checkout.totals.total
     order_total = checkout.totals.order_total
-    confirmed = _digits(confirm_total)
-    if confirmed not in {_digits(actual), _digits(order_total)}:
-        raise TotalMismatchError(confirm_total, order_total or actual)
+    confirmed = to_kopecks(confirm_total) if _CONFIRM_MONEY_RE.fullmatch(confirm_total.strip()) else None
+    expected = to_kopecks(order_total) if order_total and _CONFIRM_MONEY_RE.fullmatch(order_total.strip()) else None
+    if confirmed is None or expected is None or confirmed != expected:
+        raise TotalMismatchError(confirm_total, order_total)
+    valid_quantities = all(
+        isinstance(quantity, int) and not isinstance(quantity, bool) and quantity > 0
+        for quantity in confirm_items.values()
+    )
+    if not valid_quantities or not checkout.selected_items or confirm_items != checkout.selected_items:
+        msg = (
+            "The confirmed item quantities do not match the current checkout, or its contents are incomplete. "
+            "Nothing was ordered. Re-read get_checkout(), show the user selected_items and totals.order_total, "
+            "and confirm both again."
+        )
+        raise OzonError(msg)
 
+    return _submit_confirmed_order(checkout)
+
+
+def _submit_confirmed_order(checkout: Checkout) -> OrderPlaced:
+    """Submit once; continue only when Ozon explicitly requests polling."""
     session = get_session()
+    uncertain = "order creation could not be confirmed; check the orders list before retrying"
     for _ in range(_ORDER_POLL_ATTEMPTS):
-        response = session.action(_CREATE_ORDER_ACTION, {"id": "createOrder"})
-        data = response.get("data") or {}
+        try:
+            response = session.action(_CREATE_ORDER_ACTION, {"id": "createOrder"})
+        except OzonError as exc:
+            # The server may have received the order even when its reply was
+            # lost. A generic retry instruction is unsafe after submission.
+            raise OzonError(uncertain) from exc
+        data = response.get("data")
+        if not isinstance(data, dict):
+            raise OzonError(uncertain)
         created = data.get("createOrderResponse")
         if isinstance(created, dict):
             link = str(created.get("link") or "")
@@ -451,14 +492,21 @@ def place_order(confirm_total: str) -> OrderPlaced:
             # A card order puts the number in returnLink and the confirmation
             # page in link; a pay-on-delivery order puts the number in link.
             number = re.search(r"orderNumber=([\w\-]+)", back) or re.search(r"orderNumber=([\w\-]+)", link)
+            if number is None:
+                raise OzonError(uncertain)
             return OrderPlaced(
-                order_number=number.group(1) if number else None,
-                total=actual,
+                order_number=number.group(1),
+                total=checkout.totals.total,
                 order_total=checkout.totals.order_total,
                 link=back or None,
                 payment_url=link or None,
             )
-        pooling = data.get("poolingDetails") or {}
-        time.sleep((pooling.get("delay") or 500) / 1000)
+        pooling = data.get("poolingDetails")
+        delay = pooling.get("delay") if isinstance(pooling, dict) else None
+        # Only Ozon's explicit polling instruction authorizes another create
+        # call. Empty/error responses used to resubmit it forty times.
+        if isinstance(delay, bool) or not isinstance(delay, (int, float)) or not 0 <= delay <= _MAX_ORDER_POLL_DELAY_MS:
+            raise OzonError(uncertain)
+        time.sleep(delay / 1000)
     msg = "order creation did not finish in time; check the orders list before retrying"
     raise OzonError(msg)

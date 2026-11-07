@@ -38,6 +38,10 @@ async def get_checkout(
     items from both sides). shipment_items forces that loading on (true) or off
     (false); by default it happens only when scope is "partial".
 
+    selected_items lists the selected SKU quantities; confirm that composition
+    with the user before passing it as place_order().confirm_items. A null
+    mapping means the contents could not be read completely and ordering is refused.
+
     Forms the checkout itself if Ozon has not yet. If it reports
     available=false, `reason` says what to fix — usually: select cart items.
     Change it with configure_checkout, submit with place_order.
@@ -77,7 +81,7 @@ async def configure_checkout(
         ),
     ] = None,
 ) -> Checkout:
-    """Set checkout options and return the recomputed order — one call can set
+    """[GATED by writes_enabled] Set checkout options and return the recomputed order — one call can set
     several. Omit an argument to leave that option alone.
     Every value comes from a get_checkout() answer, so read that first; passing
     something Ozon does not offer is refused with the list of what it does.
@@ -101,21 +105,25 @@ async def place_order(
     confirm_total: Annotated[
         str,
         Field(
-            description="The total the user agreed to, copied from get_checkout().totals — either order_total "
-            '("777 ₽") or total ("0 ₽ сегодня"). Refused if Ozon has recalculated since.'
+            description="The full order cost the user agreed to, copied from get_checkout().totals.order_total "
+            '("777 ₽"). Today\'s charge is not accepted in place of the full cost.'
         ),
+    ],
+    confirm_items: Annotated[
+        dict[str, Annotated[int, Field(strict=True, gt=0)]],
+        Field(description="The SKU-to-quantity mapping the user agreed to, copied from get_checkout().selected_items."),
     ],
 ) -> OrderPlaced:
     """[GATED by orders_enabled — SPENDS REAL MONEY] Submit the order that
     get_checkout() describes. Not undoable from here except by cancel_order().
     Read get_checkout() immediately before, show the user totals.order_total —
-    what the order costs — and pass back the figure they agreed to. The call is
-    refused if that no longer matches, and nothing is ordered.
+    what the order costs — and the selected_items (SKU and quantity), and pass
+    back both values they agreed to. A changed cost or composition is refused.
     Returns once the order actually exists, with its order_number: keep it, it
     is what cancel_order() and pay_order() need. Paying from the Ozon Card
     balance settles with the order; pay-on-delivery leaves nothing to pay today.
     """
-    return await run_blocking(lambda: checkout.place_order(confirm_total))
+    return await run_blocking(lambda: checkout.place_order(confirm_total, confirm_items))
 
 
 @mcp.tool()

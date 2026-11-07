@@ -19,15 +19,17 @@ then flushes them to disk, and the refresh chain survives a restart.
 """
 
 import logging
+import math
 import re
 import secrets
 import shutil
+import stat
 import threading
 import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, Self
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from curl_cffi import requests as curl_requests
 from playwright.sync_api import sync_playwright
@@ -64,17 +66,22 @@ _GUEST_USER_ID: Final = "0"
 _TOO_MANY_REQUESTS: Final = 429
 _CLIENT_ERROR: Final = 400
 _SERVER_ERROR: Final = 500
-# Enough of a failing body to recognise it in a log or an error, no more.
-_EXCERPT_CHARS: Final = 200
 # Ozon serves each login step from its own "-lite" iframe: the email or phone
 # form from /ozonid-lite, the one-time code from /otp-lite — so the frame's URL
 # is what tells the two steps apart.
 _OTP_FRAME: Final = "otp-lite"
-_AUTH_FRAME_MARKERS: Final[tuple[str, ...]] = ("ozonid", _OTP_FRAME)
+_AUTH_FRAME_PATHS: Final = frozenset({"/ozonid-lite", "/otp-lite"})
 
 
 def _is_auth_frame(url: str) -> bool:
-    return any(marker in url for marker in _AUTH_FRAME_MARKERS)
+    parsed = urlsplit(url)
+    return parsed.scheme == "https" and parsed.netloc == "www.ozon.ru" and parsed.path in _AUTH_FRAME_PATHS
+
+
+def _validate_api_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != "www.ozon.ru" or not parsed.path.startswith("/api/"):
+        raise OzonError("refusing a request outside the fixed HTTPS Ozon API")
 
 
 def _outcome(status: int) -> str:
@@ -84,6 +91,62 @@ def _outcome(status: int) -> str:
     if 200 <= status < 300:
         return "ok"
     return f"{status // 100}xx"
+
+
+def _reject_symlink_ancestors(path: Path) -> None:
+    """Validate configured storage before mkdir, chmod or recursive removal."""
+    for entry in (path.absolute(), *path.absolute().parents):
+        if entry.is_symlink():
+            raise OSError(f"session storage must not be a symbolic link: {entry}")
+
+
+def _make_private(path: Path, *, create: bool = False) -> None:
+    """Restrict stored session data without traversing symbolic links.
+
+    Chromium's Singleton files can be links outside the profile. Keep those
+    links intact and never change the permissions of their targets.
+    """
+    _reject_symlink_ancestors(path)
+    if create:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(mode):
+        raise OSError(f"session storage must not be a symbolic link: {path}")
+    if stat.S_ISREG(mode):
+        path.chmod(0o600, follow_symlinks=False)
+    elif stat.S_ISDIR(mode):
+        path.chmod(0o700, follow_symlinks=False)
+        for parent, directories, files in path.walk(follow_symlinks=False):
+            for name in directories:
+                (parent / name).chmod(0o700, follow_symlinks=False)
+            for name in files:
+                entry = parent / name
+                if stat.S_ISREG(entry.lstat().st_mode):
+                    entry.chmod(0o600, follow_symlinks=False)
+
+
+def _copy_private_profile(source: Path, destination: Path) -> None:
+    """Keep the destination private while the copy is being written, too."""
+    _reject_symlink_ancestors(source)
+    _reject_symlink_ancestors(destination)
+    source_path, destination_path = source.resolve(), destination.resolve()
+    if source_path.is_relative_to(destination_path) or destination_path.is_relative_to(source_path):
+        raise OSError("session profile and backup paths must not overlap")
+    _make_private(source)
+    if destination.exists():
+        shutil.rmtree(destination)
+    _make_private(destination, create=True)
+    shutil.copytree(
+        source,
+        destination,
+        symlinks=True,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("Singleton*"),
+    )
+    _make_private(destination)
 
 
 class OzonSession:
@@ -110,7 +173,9 @@ class OzonSession:
         if self._page is not None:
             return
         fresh = not (self._profile / "Default").exists()
-        self._profile.mkdir(parents=True, exist_ok=True)
+        _make_private(self._profile, create=True)
+        _make_private(self._backup)
+        _make_private(self._seed_state)
         self._clear_stale_lock()
         self._playwright = sync_playwright().start()
         self._context = self._playwright.chromium.launch_persistent_context(
@@ -148,22 +213,19 @@ class OzonSession:
         if not self._profile.exists():
             return
         try:
-            if self._backup.exists():
-                shutil.rmtree(self._backup)
-            shutil.copytree(self._profile, self._backup, ignore=shutil.ignore_patterns("Singleton*"))
+            _copy_private_profile(self._profile, self._backup)
             logger.info("backed up the signed-in profile to %s", self._backup)
         except OSError:
             logger.warning("could not back up the profile", exc_info=True)
 
     def restore_profile(self) -> bool:
         """Put the last signed-in profile back, if one was kept."""
-        if not (self._backup / "Default").exists():
-            return False
-        self._close_browser()
         try:
-            if self._profile.exists():
-                shutil.rmtree(self._profile)
-            shutil.copytree(self._backup, self._profile)
+            _make_private(self._backup)
+            if not (self._backup / "Default").exists():
+                return False
+            self._close_browser()
+            _copy_private_profile(self._backup, self._profile)
         except OSError:
             logger.warning("could not restore the profile", exc_info=True)
             return False
@@ -190,6 +252,7 @@ class OzonSession:
         restore OzonID, so checkout still needs one interactive sign-in.
         """
         try:
+            _make_private(self._seed_state)
             saved = loads(self._seed_state.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             logger.info("no session to seed at %s; interactive login required", self._seed_state)
@@ -212,6 +275,7 @@ class OzonSession:
                 logger.debug("browser teardown error", exc_info=True)
         self._playwright = self._context = self._page = None
         BROWSER_ACTIVE.set(0)
+        _make_private(self._profile)
 
     def _ensure_browser(self) -> None:
         if self._page is None:
@@ -343,9 +407,10 @@ class OzonSession:
         with suppress(Exception):
             header = str((response.headers or {}).get("Retry-After") or "")
         try:
-            return float(header.strip())
+            seconds = float(header.strip())
         except ValueError:
             return None
+        return seconds if math.isfinite(seconds) and seconds >= 0 else None
 
     def _request(self, method: str, url: str, body: object = None, backend: Backend = "composer") -> dict[str, Any]:
         """One call to Ozon, retried, and never answered with an empty page.
@@ -355,13 +420,18 @@ class OzonSession:
         read exactly like an account with no orders. Anything that is not a page
         now raises instead.
 
-        A 4xx carrying JSON is passed through on purpose: Ozon reports refused
-        actions that way ("Пустое название вишлиста"), and the caller needs the
-        reason, not an exception.
+        A command's 4xx carrying JSON is passed through on purpose: Ozon
+        reports refused actions that way, and the caller needs the reason.
+        Reads always reject error statuses, including JSON error pages.
         """
+        _validate_api_url(url)
         settings = get_settings()
-        attempts = max(1, settings.request_attempts)
+        # A timeout or a 5xx can arrive after the action has already committed.
+        # Without an upstream idempotency key, replaying it can order twice.
+        attempts = max(1, settings.request_attempts) if method.upper() in {"GET", "HEAD"} else 1
         with self._lock:
+            if self._logging_in:
+                raise OzonError("login is in progress; finish submit_login_code() before reading account data")
             status, text, retry_after = 0, "", None
             started = time.monotonic()
             for attempt in range(1, attempts + 1):
@@ -376,6 +446,7 @@ class OzonSession:
                         url,
                         headers=headers,
                         timeout=settings.request_timeout,
+                        allow_redirects=False,
                         data=dumps(body) if body is not None else None,
                     )
                     status, text = response.status_code, response.text
@@ -383,7 +454,7 @@ class OzonSession:
                 # A transport failure carries no status; it is retried like a 5xx.
                 except Exception:
                     status, text, retry_after = 0, "", None
-                    logger.debug("upstream transport error on %s", url, exc_info=True)
+                    logger.debug("upstream transport error (%s)", backend)
 
                 if self._blocked(status, text):
                     UPSTREAM_REQUESTS.labels(backend=backend, outcome="rechallenge").inc()
@@ -396,32 +467,35 @@ class OzonSession:
                         self._sleep_before_retry(attempt, retry_after)
                         continue
                 else:
-                    return self._page_from(text, status, backend, started)
+                    return self._page_from(text, status, backend, started, allow_client_error=method.upper() != "GET")
             UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
             UPSTREAM_REQUESTS.labels(backend=backend, outcome="failed").inc()
             if status == _TOO_MANY_REQUESTS:
                 raise RateLimitedError(retry_after)
-            raise UpstreamError(status, _excerpt(text))
+            raise UpstreamError(status)
 
-    def _page_from(self, text: str, status: int, backend: Backend, started: float) -> dict[str, Any]:
+    def _page_from(
+        self, text: str, status: int, backend: Backend, started: float, *, allow_client_error: bool = False
+    ) -> dict[str, Any]:
         """Turn a served response into a page, or refuse to call it one.
 
-        A 4xx that is not JSON carries nothing a caller can act on — an HTML 404
-        would arrive as an empty page and read as an empty account — so it is
-        raised rather than returned.
+        Error pages cannot stand in for an empty account. JSON refusals are
+        retained only for commands, where callers inspect their error fields.
         """
         UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
         UPSTREAM_REQUESTS.labels(backend=backend, outcome=_outcome(status)).inc()
+        if status == 401:
+            raise SessionExpiredError
+        if status >= _CLIENT_ERROR and not allow_client_error:
+            raise UpstreamError(status)
         self._last_used = time.time()
         self.save_state()
         try:
             data = loads(text)
         except ValueError:
             data = None
-        if not isinstance(data, dict):
-            if status >= _CLIENT_ERROR:
-                raise UpstreamError(status, _excerpt(text))
-            data = {}
+        if 300 <= status < _CLIENT_ERROR or not isinstance(data, dict):
+            raise UpstreamError(status)
         data.setdefault("_httpStatus", status)
         return data
 
@@ -461,6 +535,11 @@ class OzonSession:
 
     def action(self, action_path: str, body: object) -> dict[str, Any]:
         """POST a composer ``_action/<action_path>`` (body sent as JSON verbatim)."""
+        path = action_path.partition("?")[0]
+        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", path) or any(
+            ord(char) < 32 or char in "\\#" for char in action_path
+        ):
+            raise OzonError("invalid Ozon action path")
         return self._request("POST", ACTION_URL + action_path, body=body, backend="action")
 
     def refresh(self) -> bool:
@@ -479,9 +558,11 @@ class OzonSession:
         delivery estimate rides a layout-pinned widget endpoint, so reading the
         rendered page is the safety net if Ozon changes that layout.
         """
+        if not path.startswith("/") or path.startswith("//") or "\\" in path or any(ord(char) < 32 for char in path):
+            raise OzonError("DOM extraction requires an on-site Ozon path")
         with self._lock:
             self._ensure_browser()
-            url = HOME_URL.rstrip("/") + path if path.startswith("/") else path
+            url = HOME_URL.rstrip("/") + path
             self._page.goto(url, wait_until="domcontentloaded", timeout=self._browser_ms())
             self._page.wait_for_timeout(6_000)
             if scroll:  # trigger lazy widgets
@@ -523,42 +604,47 @@ class OzonSession:
         """
         with self._lock:
             self._logging_in = True
-            self._close_browser()
-            self._launch_browser()
-            self._page.goto(HOME_URL + "my/orderlist", wait_until="domcontentloaded", timeout=self._browser_ms())
-            self._page.wait_for_timeout(6_000)
-            self._page.get_by_role("button", name="войти", exact=False).first.click(timeout=self._browser_ms(0.25))
-            frame = self._auth_frame()
+            self._http = None
+            try:
+                channel = self._begin_login_form(login)
+            except Exception:
+                self._logging_in = False
+                raise
+            return channel
+
+    def _begin_login_form(self, login: str) -> str:
+        self._close_browser()
+        self._launch_browser()
+        self._page.goto(HOME_URL + "my/orderlist", wait_until="domcontentloaded", timeout=self._browser_ms())
+        self._page.wait_for_timeout(6_000)
+        self._page.get_by_role("button", name="войти", exact=False).first.click(timeout=self._browser_ms(0.25))
+        frame = self._auth_frame()
+        self._page.wait_for_timeout(2_500)
+        by_mail = "@" in login
+        if by_mail:
+            frame.get_by_text("Войти по почте", exact=False).first.click(timeout=self._browser_ms(0.15))
             self._page.wait_for_timeout(2_500)
-            by_mail = "@" in login
-            if by_mail:
-                frame.get_by_text("Войти по почте", exact=False).first.click(timeout=self._browser_ms(0.15))
-                self._page.wait_for_timeout(2_500)
-                frame = self._auth_frame()
-                frame.locator("input[type=email]").first.fill(login)
-            else:
-                frame.locator("input").first.fill(login)
-            frame.get_by_role("button", name="Войти", exact=True).first.click(timeout=self._browser_ms(0.15))
-            self._page.wait_for_timeout(5_000)
-            self._require_code_step()
-            return "email" if by_mail else "phone"
+            frame = self._auth_frame()
+            frame.locator("input[type=email]").first.fill(login)
+        else:
+            frame.locator("input").first.fill(login)
+        frame.get_by_role("button", name="Войти", exact=True).first.click(timeout=self._browser_ms(0.15))
+        self._page.wait_for_timeout(5_000)
+        self._require_code_step()
+        return "email" if by_mail else "phone"
 
     def _require_code_step(self) -> None:
         """Prove Ozon is now asking for the code, or say what it is asking instead."""
         for _ in range(20):
-            if any(_OTP_FRAME in (frame.url or "") for frame in self._page.frames):
+            if any(
+                _is_auth_frame(frame.url or "") and urlsplit(frame.url).path == "/otp-lite"
+                for frame in self._page.frames
+            ):
                 return
             self._page.wait_for_timeout(1_000)
-        said = ""
-        with suppress(Exception):
-            frame = next((f for f in self._page.frames if _is_auth_frame(f.url or "")), None)
-            if frame is not None:
-                said = str(frame.evaluate("() => document.body.innerText") or "")
-        # The form echoes the login back, so only the sentences that explain the
-        # refusal are worth relaying — the rest is the account's own identifier.
-        lines = [line.strip() for line in said.splitlines() if line.strip() and "@" not in line]
-        msg = "Ozon did not move on to the code step: " + (" | ".join(lines[:6]) or "the login form said nothing")
-        raise OzonError(msg)
+        # The form can echo an email, phone or auth token. Keep its text out
+        # of caller-visible errors instead of trying to redact every format.
+        raise OzonError("Ozon did not move on to the code step; check the login form and request a new code")
 
     def complete_login(self, code: str) -> bool:
         """Type the one-time code and report whether the account is signed in.
@@ -568,6 +654,10 @@ class OzonSession:
         target: it is enabled and focused first, then real keystrokes are sent.
         """
         with self._lock:
+            if not self._logging_in:
+                raise OzonError("call start_login() before submitting a code")
+            if not re.fullmatch(r"[0-9]{4,8}", code):
+                raise OzonError("the login code must contain 4 to 8 ASCII digits")
             frame = self._auth_frame()
             frame.evaluate(
                 "() => { const el = document.querySelector('input');"
@@ -616,8 +706,3 @@ class OzonSession:
         """
         blob = str(data.get("widgetStates") or {})
         return any(marker in blob for marker in ("myOrdersList", "orderList", "profileMenuUser", "userAdultModal"))
-
-
-def _excerpt(text: str) -> str:
-    """A slice of a failing response, with the whitespace collapsed."""
-    return " ".join((text or "").split())[:_EXCERPT_CHARS]

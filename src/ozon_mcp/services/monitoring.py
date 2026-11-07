@@ -10,6 +10,7 @@ from typing import Any, Final
 
 from ozon_mcp.models.lists import PriceChange, PriceDiff
 from ozon_mcp.settings import get_settings
+from ozon_mcp.utils.money import KOPECKS
 from ozon_mcp.utils.serde import dumps, loads
 
 _MAX_SNAPSHOTS: Final = 50
@@ -28,26 +29,26 @@ def _save(history: dict[str, Any]) -> None:
     store.write_text(dumps(history, indent=True), encoding="utf-8")
 
 
-def diff(old: dict[str, int], new: dict[str, int], titles: dict[str, str]) -> PriceDiff:
+def diff(old: dict[str, float], new: dict[str, float], titles: dict[str, str]) -> PriceDiff:
     drops: list[PriceChange] = []
     rises: list[PriceChange] = []
     for sku, price in new.items():
         was = old.get(sku)
-        if was and price and price != was:
-            change = PriceChange(sku=sku, title=titles.get(sku), was=was, now=price, delta=price - was)
-            (drops if price < was else rises).append(change)
+        if was is not None and (delta := round(price * KOPECKS) - round(was * KOPECKS)):
+            change = PriceChange(sku=sku, title=titles.get(sku), was=was, now=price, delta=delta / KOPECKS)
+            (drops if delta < 0 else rises).append(change)
     drops.sort(key=lambda c: c.delta)
     return PriceDiff(
         drops=drops, rises=rises, added=[s for s in new if s not in old], removed=[s for s in old if s not in new]
     )
 
 
-def record(prices: dict[str, int], titles: dict[str, str]) -> PriceDiff:
-    """Append a ``{sku: price}`` snapshot and return the diff vs the previous."""
+def record(prices: dict[str, float], titles: dict[str, str]) -> PriceDiff:
+    """Append ruble prices (including kopecks) and diff against the previous run."""
     history = _load()
     snapshots = history.get("snapshots", [])
     previous = snapshots[-1]["prices"] if snapshots else {}
-    live = {sku: price for sku, price in prices.items() if price}
+    live = dict(prices)
     snapshots.append({"ts": int(time.time()), "prices": live})
     history["snapshots"] = snapshots[-_MAX_SNAPSHOTS:]
     stored_titles = history.get("titles", {})

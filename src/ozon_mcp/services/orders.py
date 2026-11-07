@@ -226,6 +226,9 @@ def _reasons_modal(order: str, skus: list[str] | None = None) -> tuple[str, dict
     entry = _cancel_postings_modal(order)
 
     if _REASONS_MODAL in entry:
+        if skus:
+            msg = f"order {order} offers no item picker; a partial cancellation cannot be verified"
+            raise OzonError(msg)
         state = widget(session.fetch(entry, backend="entrypoint"), "selectCancelReason") or {}
         try:
             carried = loads(state.get("state") or "{}")
@@ -390,6 +393,9 @@ def cancel_order(
     """
     _require_writes()
     order = resolve_order(order)
+    if skus is not None and not skus:
+        msg = "an explicit sku list must not be empty; omit skus to cancel the whole order"
+        raise OzonError(msg)
     if reason_id == _NEEDS_COMMENT_REASON and not comment.strip():
         msg = f"reason {reason_id} requires a comment"
         raise OzonError(msg)

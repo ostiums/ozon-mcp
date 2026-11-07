@@ -189,7 +189,7 @@ def _rebuilt_next(data: dict[str, Any]) -> str | None:
     return re.sub(r"([?&]page=)\d+", rf"\g<1>{next_token}", url)
 
 
-def next_pages(data: dict[str, Any]) -> list[str]:
+def next_pages(data: dict[str, Any], *, infer_from_page_info: bool = True) -> list[str]:
     """Every way this list can continue, in a stable order.
 
     Two things make a single answer unreliable. Ozon shuffles the paginators
@@ -200,6 +200,8 @@ def next_pages(data: dict[str, Any]) -> list[str]:
 
     So the candidates are sorted for repeatability, with the rebuilt cursor last:
     a caller walks them in order and tries the next when one is a dead end.
+    Empty terminal pages can disable inferred cursors while retaining explicit
+    continuation links.
     """
     # Two widgets do the paginating, and a page may carry either: `paginator`
     # for the ordinary lists and `infiniteVirtualPaginator` on search results.
@@ -213,12 +215,12 @@ def next_pages(data: dict[str, Any]) -> list[str]:
         if isinstance(state, dict) and state.get("nextPage")
     }
     candidates = sorted(url for url in offered if continues_this_list(url))
-    rebuilt = _rebuilt_next(data)
+    rebuilt = _rebuilt_next(data) if infer_from_page_info else None
     if rebuilt and rebuilt not in candidates:
         candidates.append(rebuilt)
     # Truly last resort: only when the page offered nothing else, or a list that
     # rebuilds its cursor would be walked with a stale one.
-    stepped = _stepped_next(data) if not candidates else None
+    stepped = _stepped_next(data) if infer_from_page_info and not candidates else None
     if stepped:
         candidates.append(stepped)
     return candidates

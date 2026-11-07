@@ -65,8 +65,8 @@ class UpstreamError(OzonError):
         super().__init__(
             (
                 f"Ozon did not return a readable page ({described}). Nothing was read, and this is not an "
-                f"empty account — retry, and if it persists check whether the session or the network is at "
-                f"fault. {detail}"
+                f"empty account. For a read-only request, retrying may help. For an account change, its "
+                f"outcome is unknown: inspect account state before retrying. {detail}"
             ).strip()
         )
 
@@ -85,8 +85,9 @@ class RateLimitedError(UpstreamError):
         waited = f" It asked to wait {retry_after:.0f}s." if retry_after else ""
         OzonError.__init__(
             self,
-            f"Ozon is rate-limiting this session (HTTP 429) and the retries did not clear it.{waited} "
-            "Nothing was read. Slow down or try again later.",
+            f"Ozon is rate-limiting this session (HTTP 429).{waited} "
+            "For a read-only request, wait before trying again. For an account change, "
+            "inspect account state before retrying.",
         )
         self.status = 429
 
@@ -131,9 +132,9 @@ class TotalMismatchError(OzonError):
 
     def __init__(self, expected: str, actual: str | None) -> None:
         super().__init__(
-            f"the order now costs {actual!r}, not the confirmed {expected!r} — Ozon recalculated it. "
-            "Nothing was ordered. Re-read get_checkout(), show the user totals.order_total, and "
-            "call place_order() again with the figure they agreed to."
+            f"The full order cost {actual!r} cannot be matched to the confirmed amount {expected!r}. "
+            "Nothing was ordered. Re-read get_checkout(), show the user totals.order_total and selected_items, "
+            "and call place_order() again with both values they agreed to."
         )
 
 

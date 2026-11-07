@@ -8,6 +8,7 @@ Endpoints captured live:
 """
 
 import re
+import sys
 from typing import Final
 
 from ozon_mcp.dependencies import get_session
@@ -16,11 +17,11 @@ from ozon_mcp.models.catalog import Tile
 from ozon_mcp.models.common import WriteResult
 from ozon_mcp.models.enums import ListKind
 from ozon_mcp.models.lists import ListRef, PriceDiff
-from ozon_mcp.parsing import catalog as catalog_parse
 from ozon_mcp.parsing.common import find_all
 from ozon_mcp.parsing.lists import parse_list_membership, parse_wishlists
 from ozon_mcp.services import monitoring
 from ozon_mcp.settings import get_settings
+from ozon_mcp.utils.money import KOPECKS, to_kopecks
 
 # Ozon reports neither success nor refusal for these actions, so the honest
 # answer names the read that settles it rather than claiming an outcome.
@@ -30,11 +31,6 @@ _DELETE_LIST_ACTION: Final = "favoriteDeleteList"
 
 
 _LISTS_PATH: Final = "/my/favorites/lists"
-
-
-def _price_number(price: str | None) -> int | None:
-    digits = re.sub(r"\D", "", price or "")
-    return int(digits) if digits else None
 
 
 def _require_writes() -> None:
@@ -55,8 +51,10 @@ def list_favorites(limit: int = 100) -> list[Tile]:
 
 
 def check_favorite_price_drops() -> PriceDiff:
-    tiles = catalog_parse.parse_tiles(get_session().fetch("/my/favorites"))
-    prices = {tile.sku: _price_number(tile.price) or 0 for tile in tiles if tile.sku}
+    from ozon_mcp.services.catalog import _paginate_tiles  # ruff: ignore[import-outside-top-level] - avoids a cycle
+
+    tiles = _paginate_tiles("/my/favorites", sys.maxsize, counter="favoriteCounter", require_complete=True)
+    prices = {tile.sku: price / KOPECKS for tile in tiles if tile.sku and (price := to_kopecks(tile.price)) is not None}
     titles = {tile.sku: tile.title or "" for tile in tiles if tile.sku}
     return monitoring.record(prices, titles)
 
