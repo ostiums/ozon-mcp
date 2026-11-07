@@ -6,8 +6,18 @@ from pydantic import Field
 
 from ozon_mcp.dependencies import run_blocking
 from ozon_mcp.mcp_server import mcp
-from ozon_mcp.models.catalog import Cheaper, DeliveryEstimate, Description, ProductCard, Reviews, SearchFilter, Tile
+from ozon_mcp.models.catalog import (
+    Cheaper,
+    DeliveryEstimate,
+    Description,
+    OwnedSearchProbe,
+    ProductCard,
+    Reviews,
+    SearchFilter,
+    Tile,
+)
 from ozon_mcp.services import catalog
+from ozon_mcp.services.public_catalog import owned_search_probe as probe_owned_search
 from ozon_mcp.utils.annotations import Limit, Page, ReviewSort, SearchSort, SkuOrUrl
 
 
@@ -42,6 +52,11 @@ async def search(
     wording and may name no model at all.
     A tile is not a card: for variants, characteristics, photos and stock call
     product_details() with its sku.
+    The default composer call does not follow redirects. HTTP 3xx is
+    upstream_unavailable with a host and path class, not the destination.
+    A signed-in order list does not show that this search succeeded.
+    `OZON_STOREFRONT=public` reads schema.org data from the existing browser
+    instead, and does not fall back to the composer API. It is off unless set.
     filters comes from get_search_filters() — {key: option_value} for a
     checkbox or category facet, {key: "min;max"} for a range, e.g.
     {"currency_price": "200;600"}. Narrowing by price is a filter, not a sort.
@@ -134,3 +149,19 @@ async def find_cheaper(sku_or_url: SkuOrUrl, limit: Limit = 10) -> Cheaper:
     cheaper" for a product it failed to price.
     """
     return await run_blocking(lambda: catalog.find_cheaper(sku_or_url, limit))
+
+
+@mcp.tool()
+async def owned_search_probe() -> OwnedSearchProbe:
+    """Read the page this process already owns. Call it with no arguments:
+    owned_search_probe().
+
+    It does not navigate, does not launch a browser, does not adopt another
+    tab, and does not evaluate caller-supplied script. Other tabs contribute
+    only how many of them are classified as an Ozon search URL. Structural
+    counts are taken only when the owned page itself is an Ozon search page.
+    The result has query parameter names, not values, and no URL, title, HTML,
+    or account data. public_read_timeout and browser_timeout are the configured
+    budgets. This does not repair search.
+    """
+    return await run_blocking(probe_owned_search)

@@ -15,6 +15,14 @@ class Tile(OzonModel):
     )
     price_regular: str | None = Field(default=None, description="Ozon's «С другими банками» price, when it differs.")
     price_old: str | None = Field(default=None, description="The struck-through price Ozon compares against.")
+    displayed_price: str | None = Field(
+        default=None,
+        description=(
+            "The amount printed on a public search tile. It is not «С банками» or "
+            "«С другими банками» unless that label is visible, and those labels were not "
+            "present on the inspected tile."
+        ),
+    )
     url: str | None = None
     seller: str | None = Field(default=None, description="Set on offers from other sellers, which carry no title.")
     delivery: str | None = Field(default=None, description='Ozon\'s own line, e.g. "Доставим 9 сентября".')
@@ -155,6 +163,10 @@ class ProductCard(OzonModel):
     )
     price_regular: str | None = Field(default=None, description="Ozon's «С другими банками» price.")
     price_old: str | None = Field(default=None, description="The struck-through price Ozon compares against.")
+    displayed_price: str | None = Field(
+        default=None,
+        description="The amount printed on the public page when its price role was not labeled.",
+    )
     available: bool | None = Field(default=None, description="Whether Ozon offers it for sale at all.")
     rating: float | None = Field(default=None, description="The rating Ozon prints on the card, e.g. 4.9.")
     reviews_count: int | None = Field(default=None, description="How many reviews it has; get_reviews() reads them.")
@@ -200,6 +212,38 @@ class SearchFilter(OzonModel):
 class Cheaper(OzonModel):
     base: dict[str, str | None]
     cheaper: list[Tile] = Field(default_factory=list)
+
+
+class OwnedSearchProbe(OzonModel):
+    """Identity and structural counts for the one page this process already owns.
+
+    Query names are included only for an Ozon search URL. Values, the URL,
+    the title, markup, and every other tab's body are absent. ``navigated``
+    is false: this read does not call goto.
+    """
+
+    storefront: str
+    public_read_timeout: float
+    browser_timeout: float
+    navigated: bool
+    owned_page: str
+    dom_counts: str
+    url_class: str
+    query_keys: str
+    query_keys_dropped: int
+    context_pages: int | None = None
+    owned_index: int | None = None
+    other_search_pages: int | None = None
+    elapsed_ms: int
+    paginator: str = "not_taken"
+    tile_grids: str = "not_taken"
+    tile_roots_attached: str = "not_taken"
+    product_anchors_attached: str = "not_taken"
+    title_spans_attached: str = "not_taken"
+    title_spans_visible: str = "not_taken"
+    first_title_visible: str = "not_taken"
+    document_visibility: str = "unread"
+    document_focused: str = "not_taken"
 
 
 class DeliveryEstimate(OzonModel):

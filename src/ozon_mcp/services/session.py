@@ -10,6 +10,7 @@ calls with a person in between.
 from ozon_mcp.dependencies import get_session
 from ozon_mcp.models.enums import LoginStage
 from ozon_mcp.models.session import LoginStep, SessionStatus
+from ozon_mcp.services.public_catalog import owned_search_probe
 from ozon_mcp.settings import get_settings
 
 
@@ -23,6 +24,9 @@ def session_status() -> SessionStatus:
     settings = get_settings()
     user = session.signed_in_user()
     backup = session.has_backup()
+    # The probe never launches or navigates. signed_in_user above is unchanged:
+    # an already open page is left where it is.
+    probe = owned_search_probe() if settings.public_diagnostics else None
     if user:
         return SessionStatus(
             signed_in=True,
@@ -31,6 +35,7 @@ def session_status() -> SessionStatus:
             cart_enabled=settings.cart_enabled,
             writes_enabled=settings.enable_writes,
             orders_enabled=settings.enable_orders,
+            owned_search=probe,
         )
     return SessionStatus(
         signed_in=False,
@@ -38,6 +43,7 @@ def session_status() -> SessionStatus:
         cart_enabled=settings.cart_enabled,
         writes_enabled=settings.enable_writes,
         orders_enabled=settings.enable_orders,
+        owned_search=probe,
         detail=(
             "signed out; a kept profile copy is tried automatically on the next call"
             if backup
@@ -47,13 +53,19 @@ def session_status() -> SessionStatus:
 
 
 def start_login(login: str) -> LoginStep:
-    """Ask Ozon to send a one-time code to ``login`` (email or phone)."""
+    """Ask Ozon for a one-time code for ``login`` (email or phone)."""
     channel = get_session().begin_login(login)
-    return LoginStep(
-        stage=LoginStage.CODE_REQUESTED,
-        login=login,
-        detail=f"Ozon is sending a code by {channel}; pass it to submit_login_code()",
-    )
+    if channel == "email":
+        detail = (
+            "Ozon is asking for a one-time code for this email login. "
+            "Pass the code the account owner received to submit_login_code()."
+        )
+    else:
+        detail = (
+            "Ozon is asking for a one-time code. The login page did not show whether it arrived "
+            "by push, SMS or a phone call. Pass the code the account owner received to submit_login_code()."
+        )
+    return LoginStep(stage=LoginStage.CODE_REQUESTED, login=login, detail=detail)
 
 
 def submit_login_code(code: str) -> SessionStatus:

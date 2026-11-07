@@ -23,6 +23,10 @@ async def session_status() -> SessionStatus:
     no orders, no balances, no explanation. Recovery is start_login() +
     submit_login_code(), and backup_available=true means it will most likely
     recover by itself on the next call.
+    Call session_status() with no arguments. OZON_PUBLIC_DIAGNOSTICS=1 adds
+    owned_search, a no-navigation read of the page this process already owns.
+    The field is absent unless that flag is set. It does not launch, navigate,
+    or read another tab.
     """
     return await run_blocking(session.session_status)
 
@@ -31,11 +35,13 @@ async def session_status() -> SessionStatus:
 async def start_login(
     login: Annotated[str, Field(description="The account's email or phone, as registered with Ozon.")],
 ) -> LoginStep:
-    """Ask Ozon to send a one-time login code to `login` (account email or
-    phone). Use this when session_status() reports signed_in=false and the kept
-    profile copy did not recover it.
-    Ozon delivers the code out of band (email, SMS or a flash call), so ask the
-    user for it and pass it to submit_login_code().
+    """Ask Ozon for a one-time login code for `login` (account email or phone).
+    Use this when session_status() reports signed_in=false and the kept profile
+    copy did not recover it.
+    The code arrives outside this server. The result names email only when the
+    email form was submitted. A phone form does not establish push, SMS or a
+    call. Ask the account owner for the code they received and pass it to
+    submit_login_code().
     """
     return await run_blocking(lambda: session.start_login(login))
 

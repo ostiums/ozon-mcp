@@ -8,6 +8,22 @@ Notable changes are documented here. The format follows
 
 ### Added
 
+- Optional `OZON_BROWSER_CHANNEL=chrome` selects the installed stable Chrome channel. The default remains Playwright's Chromium.
+- `OZON_PUBLIC_DIAGNOSTICS=1` adds `owned_search` to the existing `session_status()` result. The probe does not launch, navigate, or adopt a tab. The field is omitted unless the flag is set. `owned_search_probe()` remains for a client that already lists it. `session_status()` gains no arguments. Live pages were not read here.
+- A public search records, at navigation return and at the tile deadline, the owned page's index, the context page count, other search-class pages as a count, elapsed milliseconds, and sorted query parameter names. `owned_search_probe()` repeats that read on the current owned page and does not navigate. Neither change reads another tab's body or returns a URL. Live pages were not read here.
+- A public tile deadline keeps the `visible` wait and the shared read budget. Before returning, it records non-waiting attached and visible counts for each boundary of that same selector, whether `.first` is visible, `document.visibilityState`, and whether `bring_to_front` ran. Those counts are omitted when the budget is already gone, so a zero is a measurement. The HTML snapshot is still not taken on that path. Live pages were not read here.
+- `OZON_STOREFRONT=public` reads search tiles from the existing browser. A tile is `div.tile-root[data-index]` inside `div.tileGridDesktop` in `div[data-widget=infiniteVirtualPaginator]`. The title is `span.tsBody500Medium` in the product link. The printed amount is `span.tsHeadline500Medium` in that same tile and is returned as `displayed_price`, not as the «С банками» price. Hashed classes are ignored. The read waits for that tile, or reports that the owned page stayed `about:blank` or that the selector was not ready. It does not adopt another tab. Schema.org data is still used when present. The default remains `composer`. Navigation and tile readiness share `OZON_PUBLIC_READ_TIMEOUT` (default 20 seconds), not two copies of `OZON_BROWSER_TIMEOUT`. Live timing was not measured.
+- Optional `OZON_PROXY_URL` is the only proxy, shared by the browser and the HTTP client. `trust_env` is false. With no URL, libcurl is given an empty proxy so it does not inherit `http_proxy`. `OZON_PROXY_REMOTE_DNS` adds Chromium remote-DNS rules that exclude only the proxy host.
+- Redirect responses name a fixed host and path class. The destination, query and headers are not included, and no redirect is followed.
+- `OZON_SHUTDOWN_TIMEOUT` bounds the wait for session close. SIGTERM closes stdio's input so a blocked read can return. Neither was retested on a deployed process.
+
+### Fixed
+
+- Login reuses an open browser instead of closing it first, and distinguishes network, access-denied and challenge titles. A network title is not described as a CAPTCHA.
+- Phone login fills ten national digits only after one confirmed `+7` country control. Ambiguous forms fail before fill. The code step does not claim push, SMS or a phone call.
+- A Chromium profile lock is removed only when its owner is this machine and the pid is dead. A live or foreign lock is left in place.
+- A signed-in browser with no auth frame clears a stale login-in-progress flag. A code form or a signed-out profile does not.
+
 - `OZON_ENABLE_CART` permits only cart quantity and selection changes, without
   payments, cancellations or other account writes. `OZON_ENABLE_WRITES` retains
   its broad behavior, including cart access; `session_status` and login responses

@@ -246,6 +246,10 @@ different answers.
 | `OZON_PROFILE_DIR` | `/data/profile` | Persistent Chromium profile holding the session |
 | `OZON_PROFILE_BACKUP` | `/data/profile.backup` | Copy of a known-good profile, restored on a sign-out |
 | `OZON_STATE_PATH` | `/data/state.json` | Legacy cookie snapshot, imported once to seed a new profile |
+| `OZON_BROWSER_CHANNEL` | unset | `chrome` selects installed stable Chrome; unset keeps Playwright's Chromium |
+| `OZON_STOREFRONT` | `composer` | `public` reads schema.org data in the existing browser for search and product cards. It is not a fallback |
+| `OZON_PROXY_URL` | unset | Explicit proxy for the browser and HTTP client. Unset is direct; environment proxies are not used |
+| `OZON_PROXY_REMOTE_DNS` | `0` | With `OZON_PROXY_URL`, resolve names at the proxy and exclude only the proxy host |
 | `OZON_IMPERSONATE` | `chrome124` | curl_cffi TLS-impersonation profile |
 | `OZON_ENABLE_CART` | `0` | Allow only cart quantity and selection changes |
 | `OZON_ENABLE_WRITES` | `0` | Allow broad writes: cart, favorites, lists, selections, checkout options, cancellations and existing-order payments |
@@ -256,6 +260,9 @@ different answers.
 | `OZON_RETRY_BACKOFF_SECONDS` | `1` | Base wait between attempts, doubled and jittered |
 | `OZON_RETRY_CAP_SECONDS` | `20` | Longest wait, including a `Retry-After` Ozon asks for |
 | `OZON_BROWSER_TIMEOUT` | `60` | Seconds for a browser navigation or a login step |
+| `OZON_PUBLIC_READ_TIMEOUT` | `20` | Shared seconds for one public read: navigation, tile readiness, and the snapshot. Keep it shorter than the MCP client deadline |
+| `OZON_PUBLIC_DIAGNOSTICS` | off | `1` adds `owned_search` to `session_status()`. The probe does not launch or navigate. `session_status()` takes no new arguments |
+| `OZON_SHUTDOWN_TIMEOUT` | `5` | Seconds to wait for session close. A timeout does not delete profile locks |
 | `OZON_IDLE_SECONDS` | `600` | Close the idle browser; the HTTP session stays |
 | `OZON_TRANSPORT` | `stdio` | `stdio` (client spawns the process), `http` (streamable HTTP at `/mcp`) or `sse` (deprecated, `/sse`) |
 | `OZON_HOST` / `OZON_PORT` | `127.0.0.1` / `8084` | Bind for the HTTP transports; the same port serves `/metrics` |
@@ -264,6 +271,8 @@ different answers.
 | `OZON_ALLOWED_ORIGINS` | `["http://127.0.0.1:*","http://localhost:*","http://[::1]:*"]` | Allowed browser origins; checked when Origin is present; `[]` denies all Origin-bearing requests |
 
 See `env.example`.
+
+Search uses the composer JSON API. A 3xx response is reported and not followed; the public HTML search page is not scraped as a fallback. A signed-in order list does not show that search succeeded. Headed Chrome uses the process `DISPLAY`. The package does not set a deployment display, proxy or profile path. Profile backup, sleep/resume, and SIGTERM on a deployed process were not retested here.
 
 ## Running
 

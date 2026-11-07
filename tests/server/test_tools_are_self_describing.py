@@ -50,6 +50,15 @@ def test_the_server_explains_itself() -> None:
     assert "different answers" in instructions
 
 
+async def test_owned_search_probe_takes_no_arguments() -> None:
+    by_name = {tool.name: tool for tool in await mcp.list_tools()}
+    probe = by_name["owned_search_probe"]
+    assert _properties(probe) == {}
+    description = probe.description or ""
+    assert "owned_search_probe()" in description
+    assert "does not navigate" in description
+
+
 async def test_every_tool_and_argument_describes_itself() -> None:
     tools = await mcp.list_tools()
     assert [tool.name for tool in tools if not (tool.description or "").strip()] == []

@@ -29,9 +29,9 @@ import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, Self
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
-from curl_cffi import requests as curl_requests
+from curl_cffi import CurlOpt, requests as curl_requests
 from playwright.sync_api import sync_playwright
 
 from ozon_mcp.constants import (
@@ -44,13 +44,32 @@ from ozon_mcp.constants import (
     WIDGET_URL,
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
+from ozon_mcp.parsing.public_storefront import (
+    DEADLINE_VISIBILITY,
+    PUBLIC_PAGE_READER,
+    format_public_diagnostics,
+    query_key_names,
+    snapshot_counts,
+    step_budget_ms,
+    url_class,
+)
+from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR, PUBLIC_TILE_STAGES
+from ozon_mcp.session.page_health import classify_page_title, health_message
+from ozon_mcp.session.phone_form import (
+    has_separate_russian_prefix,
+    login_code_channel,
+    normalize_phone_input,
+    raise_for_phone_format_error,
+    select_phone_input,
+)
+from ozon_mcp.session.profile_lock import clear_dead_profile_lock
+from ozon_mcp.session.proxy import browser_network_args, http_proxy_choice, playwright_proxy
 from ozon_mcp.settings import get_settings
 from ozon_mcp.utils.observability import BROWSER_ACTIVE, SESSION_BOOTSTRAPS, UPSTREAM_LATENCY, UPSTREAM_REQUESTS
 from ozon_mcp.utils.serde import dumps, loads
 
 logger = logging.getLogger("ozon_mcp")
 
-_ANTIBOT: Final = re.compile(r"antibot|ограничен|нет соединения|доступ", re.IGNORECASE)
 # Cookies that carry the login; only these are worth syncing back to the browser.
 _SESSION_COOKIES: Final[frozenset[str]] = frozenset({
     "__Secure-access-token",
@@ -149,6 +168,335 @@ def _copy_private_profile(source: Path, destination: Path) -> None:
     _make_private(destination)
 
 
+def _redirect_detail(location: object, request_url: str) -> str:
+    """Return fixed labels only. Destination text is never included."""
+    prefix = "Redirect destination: "
+    if location is None or (isinstance(location, str) and not location):
+        return prefix + "host=missing; path=unknown."
+    if not isinstance(location, str):
+        return prefix + "host=malformed; path=unknown."
+    return prefix + _redirect_classes(location, request_url)
+
+
+def _redirect_classes(location: str, request_url: str) -> str:
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in location) or "\\" in location:
+        return "host=malformed; path=unknown."
+    try:
+        target = urlsplit(urljoin(request_url, location))
+        host = target.hostname
+        port = target.port
+    except (ValueError, UnicodeError):
+        return "host=malformed; path=unknown."
+    if port is not None and port <= 0:
+        return "host=malformed; path=unknown."
+    if target.scheme not in {"https", "http"} or not host or target.username is not None or target.password is not None:
+        return "host=malformed; path=unknown."
+    if host == "www.ozon.ru":
+        host_class = "same-canonical-ozon"
+    elif host == "ozon.ru" or host.endswith(".ozon.ru"):
+        host_class = "other-ozon"
+    else:
+        host_class = "external"
+    path = target.path
+    if path in {"/", "/search/"}:
+        path_class = path
+    elif path == "/api" or path.startswith("/api/"):
+        path_class = "api-path"
+    else:
+        path_class = "other-path"
+    return f"host={host_class}; path={path_class}."
+
+
+def _page_is_closed(page: Any) -> bool:
+    closed = getattr(page, "is_closed", None)
+    if closed is None:
+        return False
+    try:
+        return bool(closed())
+    except Exception:
+        return False
+
+
+def _bring_owned_page_forward(page: Any) -> str:
+    """Show the page we own. Other tabs are left open and are not read."""
+    bring = getattr(page, "bring_to_front", None)
+    if bring is None:
+        return "missing"
+    try:
+        bring()
+    except Exception:
+        return "failed"
+    return "ok"
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.monotonic() - started) * 1000))
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    return isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError"
+
+
+def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
+    """True when the first inspected tile is visible before the remaining budget ends.
+
+    ``visible`` means a non-empty bounding box and no ``visibility:hidden``.
+    An attached node with an empty box does not pass. ``.first`` waits for
+    that one node, not for a later match.
+    """
+    if timeout_ms <= 0:
+        return False
+    try:
+        page.locator(PUBLIC_TILE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
+    except Exception:
+        return False
+    return True
+
+
+_STAGE_FIELDS: Final = {
+    "paginator": "paginator",
+    "tile_grids": "tile_grids",
+    "tile_roots": "tile_roots_attached",
+    "product_anchors": "product_anchors_attached",
+    "title_spans": "title_spans_attached",
+}
+
+
+def _immediate_count(page: Any, selector: str) -> int | str:
+    try:
+        return int(page.locator(selector).count())
+    except Exception:
+        return "error"
+
+
+def _budget_left(started: float, total_ms: int) -> bool:
+    return _elapsed_ms(started) < total_ms
+
+
+def _listed_pages(context: Any) -> list[Any] | None:
+    """The context's page objects, or None when the list cannot be read.
+
+    Only the list is read. No page body, title, or URL is touched here.
+    """
+    if context is None:
+        return None
+    try:
+        return list(context.pages)
+    except Exception:
+        return None
+
+
+def _identity_mark(page: Any, context: Any) -> dict[str, Any]:
+    """Which owned page this is, without its URL, title, or any other tab's body.
+
+    Other pages contribute a count of ``ozon-search`` classifications only.
+    Query names are returned only when this page itself is that class.
+    """
+    pages = _listed_pages(context)
+    owned_index: int | None = None
+    other_search = 0
+    if pages is not None:
+        for index, candidate in enumerate(pages):
+            if candidate is page:
+                owned_index = index
+                continue
+            try:
+                candidate_url = getattr(candidate, "url", "")
+            except Exception:
+                candidate_url = ""
+            if url_class(candidate_url) == "ozon-search":
+                other_search += 1
+    try:
+        raw_url = getattr(page, "url", "")
+    except Exception:
+        raw_url = ""
+    klass = url_class(raw_url)
+    if klass == "ozon-search":
+        keys, dropped = query_key_names(raw_url)
+    else:
+        keys, dropped = "not_taken", 0
+    return {
+        "context_pages": len(pages) if pages is not None else None,
+        "owned_index": owned_index,
+        "other_search_pages": other_search if pages is not None else None,
+        "url_class": klass,
+        "query_keys": keys,
+        "query_keys_dropped": dropped,
+    }
+
+
+def _stage_counts(page: Any, *, started: float, total_ms: int) -> dict[str, Any]:
+    """Non-waiting attached and visible counts. A late stage is None, not zero."""
+    measured: dict[str, Any] = {}
+    for name, selector in PUBLIC_TILE_STAGES:
+        field = _STAGE_FIELDS[name]
+        measured[field] = _immediate_count(page, selector) if _budget_left(started, total_ms) else None
+    if not _budget_left(started, total_ms):
+        measured["title_spans_visible"] = None
+        measured["first_title_visible"] = None
+        return measured
+    try:
+        measured["title_spans_visible"] = int(page.locator(PUBLIC_TILE_SELECTOR).filter(visible=True).count())
+    except Exception:
+        measured["title_spans_visible"] = "error"
+    attached = measured.get("title_spans_attached")
+    if not _budget_left(started, total_ms):
+        measured["first_title_visible"] = None
+    elif attached == 0:
+        measured["first_title_visible"] = False
+    elif isinstance(attached, int) and attached > 0:
+        try:
+            measured["first_title_visible"] = bool(page.locator(PUBLIC_TILE_SELECTOR).first.is_visible())
+        except Exception:
+            measured["first_title_visible"] = "error"
+    else:
+        measured["first_title_visible"] = None
+    return measured
+
+
+def _public_mark(page: Any, context: Any, *, started: float, total_ms: int) -> dict[str, Any]:
+    """Identity plus structural counts at one instant of the shared clock."""
+    mark = _identity_mark(page, context)
+    mark["ms"] = _elapsed_ms(started)
+    mark.update(_stage_counts(page, started=started, total_ms=total_ms))
+    return mark
+
+
+def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_front: str) -> dict[str, Any]:
+    """Non-waiting counts on the owned page. The HTML reader is not evaluated."""
+    measured: dict[str, Any] = {"deadline_probe": "measured", "bring_to_front": brought_to_front}
+    measured.update(_stage_counts(page, started=started, total_ms=total_ms))
+    if not _budget_left(started, total_ms):
+        measured["document_visibility"] = "unread"
+        measured["document_focused"] = None
+        return measured
+    measured["document_visibility"], measured["document_focused"] = _page_visibility(page)
+    return measured
+
+
+def _page_visibility(page: Any) -> tuple[str, bool | None]:
+    try:
+        state = page.evaluate(DEADLINE_VISIBILITY)
+    except Exception:
+        return "unread", None
+    if not isinstance(state, dict):
+        return "unread", None
+    raw_visibility = state.get("visibility")
+    focused = state.get("focused")
+    visibility = "unread"
+    if raw_visibility in {"visible", "hidden", "prerender"}:
+        visibility = str(raw_visibility)
+    focused_bit = focused if isinstance(focused, bool) else None
+    return visibility, focused_bit
+
+
+def _raise_public(
+    page: Any,
+    lead: str,
+    *,
+    ready: bool,
+    goto_mark: dict[str, Any] | None,
+    probe_mark: dict[str, Any] | None = None,
+    probe: dict[str, Any] | None = None,
+) -> None:
+    """Raise a diagnostic error. Marks carry counts and query names, not the URL."""
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    status: dict[str, Any] = {
+        "title": title if isinstance(title, str) else "",
+        "url_class": url_class(getattr(page, "url", "")),
+        "tile_selector_ready": ready,
+    }
+    if probe:
+        status.update(probe)
+    if goto_mark is not None:
+        status["goto_mark"] = goto_mark
+    if probe_mark is not None:
+        status["probe_mark"] = probe_mark
+    raise OzonError(lead + format_public_diagnostics(status))
+
+
+def _raise_unread_tile(
+    page: Any,
+    context: Any,
+    started: float,
+    total_ms: int,
+    brought_to_front: str,
+    goto_mark: dict[str, Any],
+) -> None:
+    """Deadline error with a bounded probe, or an explicit skipped probe."""
+    probe_mark = _identity_mark(page, context)
+    probe_mark["ms"] = _elapsed_ms(started)
+    if _budget_left(started, total_ms):
+        probe = _measure_deadline(page, started=started, total_ms=total_ms, brought_to_front=brought_to_front)
+        detail = "The HTML snapshot was not taken. "
+    else:
+        probe = {"deadline_probe": "skipped", "bring_to_front": brought_to_front}
+        detail = "The deadline probe was not taken. "
+    lead = "Public tile selector was not ready before the deadline. " + detail + "This is not an empty search result. "
+    _raise_public(page, lead, ready=False, goto_mark=goto_mark, probe_mark=probe_mark, probe=probe)
+
+
+def _phrase_visible(page: Any, phrase: str) -> bool:
+    getter = getattr(page, "get_by_text", None)
+    if getter is None:
+        return False
+    try:
+        located = getter(phrase, exact=False)
+    except Exception:
+        return False
+    try:
+        return bool(located.count() and located.first.is_visible())
+    except Exception:
+        return False
+
+
+def _empty_phrase_visible(page: Any) -> bool:
+    return any(_phrase_visible(page, phrase) for phrase in EMPTY_RESULT_PHRASES)
+
+
+def _status(page: Any, *, ready: bool, data: dict[str, Any]) -> dict[str, Any]:
+    title = data.get("title")
+    if not isinstance(title, str):
+        try:
+            title = page.title()
+        except Exception:
+            title = ""
+    return {
+        "title": title if isinstance(title, str) else "",
+        "url_class": url_class(getattr(page, "url", "")),
+        "tile_selector_ready": ready,
+        "counts": snapshot_counts(data.get("html")),
+    }
+
+
+def _public_catalog_path(path: str) -> str:
+    """Allow only a same-site search, category or product path."""
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or any(ord(char) < 32 for char in path):
+        message = "public storefront reads only an on-site catalog path"
+        raise OzonError(message)
+    parsed = urlsplit(path)
+    if parsed.scheme or parsed.netloc:
+        message = "public storefront reads only an on-site catalog path"
+        raise OzonError(message)
+    route = parsed.path
+    if route == "/search" or route.startswith(("/search/", "/category/", "/product/")):
+        return path
+    message = "public storefront reads only /search, /category and /product"
+    raise OzonError(message)
+
+
+def _response_redirect_detail(response: Any, status: int, url: str) -> str:
+    if response is None or not 300 <= status < _CLIENT_ERROR:
+        return ""
+    location = None
+    with suppress(Exception):
+        location = response.headers.get("Location")
+    return _redirect_detail(location, url)
+
+
 class OzonSession:
     """Persistent-profile browser plus a curl_cffi transport (thread-safe)."""
 
@@ -178,15 +526,25 @@ class OzonSession:
         _make_private(self._backup)
         _make_private(self._seed_state)
         self._clear_stale_lock()
+        settings = get_settings()
+        proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
+        launch_kwargs: dict[str, Any] = {
+            "user_data_dir": str(self._profile),
+            "headless": False,
+            "args": [*LAUNCH_ARGS, *browser_network_args(proxy_url=proxy_url, remote_dns=settings.proxy_remote_dns)],
+            "locale": "ru-RU",
+            "timezone_id": "Europe/Moscow",
+            "viewport": {"width": 1366, "height": 900},
+            # Keep SIGTERM for this process. Playwright's default handler would replace it.
+            "handle_sigterm": False,
+        }
+        proxy = playwright_proxy(proxy_url)
+        if proxy is not None:
+            launch_kwargs["proxy"] = proxy
+        if settings.browser_channel is not None:
+            launch_kwargs["channel"] = settings.browser_channel
         self._playwright = sync_playwright().start()
-        self._context = self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(self._profile),
-            headless=False,
-            args=list(LAUNCH_ARGS),
-            locale="ru-RU",
-            timezone_id="Europe/Moscow",
-            viewport={"width": 1366, "height": 900},
-        )
+        self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
         if fresh:
             self._seed_from_state()
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
@@ -196,12 +554,13 @@ class OzonSession:
         self._raise_for_antibot_challenge()
 
     def _raise_for_antibot_challenge(self) -> None:
-        """Keep a blocked page open so the account owner can pass the challenge."""
-        if not _ANTIBOT.search((self._page.title() or "").lower()):
+        """Stop on an unhealthy title. A network title is not a CAPTCHA."""
+        message = health_message(classify_page_title(self._page.title() or ""))
+        if message is None:
             return
         self._logging_in = False
-        logger.warning("Ozon antibot challenge is open; complete it in the browser and retry")
-        raise RuntimeError("Ozon antibot challenge is open; complete the manual check in the browser and retry")
+        logger.warning("%s", message)
+        raise RuntimeError(message)
 
     def back_up_profile(self) -> None:
         """Snapshot a profile that is known to be signed in.
@@ -240,17 +599,9 @@ class OzonSession:
         return True
 
     def _clear_stale_lock(self) -> None:
-        """Drop a Chromium profile lock left by a killed process.
-
-        A profile may only be open once, and Chromium refuses to start if the
-        lock is present — including when the owner died without cleaning up,
-        which is exactly what happens when a container is stopped mid-call.
-        """
-        for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-            lock = self._profile / name
-            if lock.is_symlink() or lock.exists():
-                lock.unlink(missing_ok=True)
-                logger.info("removed stale profile lock %s", name)
+        """Drop a lock whose owner is dead. A live or foreign owner blocks startup."""
+        for name in clear_dead_profile_lock(self._profile):
+            logger.info("removed stale profile lock %s", name)
 
     def _seed_from_state(self) -> None:
         """Import a legacy ``state.json`` into a brand-new profile.
@@ -314,11 +665,31 @@ class OzonSession:
         )
         self._page.wait_for_timeout(500)
         self._headers = {k: v for k, v in captured.items() if k.lower() in HARVEST_HEADERS}
-        self._http = curl_requests.Session(impersonate=self._impersonate)
+        self._http = curl_requests.Session(**self._http_client_kwargs())
         for cookie in self._context.cookies():
             self._http.cookies.set(cookie["name"], cookie["value"], domain=".ozon.ru")
         self._synced = {c["name"]: c["value"] for c in self._context.cookies() if c["name"] in _SESSION_COOKIES}
         self._last_used = time.time()
+
+    def _http_client_kwargs(self) -> dict[str, Any]:
+        """Explicit proxy, or an empty proxy so libcurl ignores the environment.
+
+        curl_cffi stores ``trust_env`` but does not apply it. An explicit proxy
+        is used for every scheme, and HTTPS uses CONNECT. ``NO_PROXY`` does not
+        replace that proxy. With no configured proxy, an empty proxy string
+        stops libcurl from reading ``http_proxy``.
+        """
+        settings = get_settings()
+        proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
+        choice = http_proxy_choice(proxy_url)
+        kwargs: dict[str, Any] = {"impersonate": self._impersonate, "trust_env": False}
+        if choice.disable_env_proxy:
+            kwargs["curl_options"] = {CurlOpt.PROXY: ""}
+            return kwargs
+        kwargs["proxy"] = choice.proxy
+        if choice.proxy_auth is not None:
+            kwargs["proxy_auth"] = choice.proxy_auth
+        return kwargs
 
     def _browser_is_signed_in(self) -> bool:
         """Whether the profile still holds a session, judged by its own cookie."""
@@ -437,11 +808,16 @@ class OzonSession:
         # Without an upstream idempotency key, replaying it can order twice.
         attempts = max(1, settings.request_attempts) if method.upper() in {"GET", "HEAD"} else 1
         with self._lock:
+            if getattr(self, "_page", None) is not None and getattr(self, "_context", None) is not None:
+                self._reconcile_completed_manual_login()
             if self._logging_in:
                 raise OzonError("login is in progress; finish submit_login_code() before reading account data")
             status, text, retry_after = 0, "", None
             started = time.monotonic()
+            response: Any = None
+            redirect_detail = ""
             for attempt in range(1, attempts + 1):
+                redirect_detail = ""
                 self._ensure_http()
                 headers = dict(self._headers)
                 headers["accept"] = "application/json"
@@ -460,29 +836,69 @@ class OzonSession:
                     retry_after = self._retry_after(response) if status == _TOO_MANY_REQUESTS else None
                 # A transport failure carries no status; it is retried like a 5xx.
                 except Exception:
+                    response = None
                     status, text, retry_after = 0, "", None
                     logger.debug("upstream transport error (%s)", backend)
 
-                if self._blocked(status, text):
-                    UPSTREAM_REQUESTS.labels(backend=backend, outcome="rechallenge").inc()
-                    if attempt < attempts:
-                        self._rebootstrap()
-                        continue
-                elif status == _TOO_MANY_REQUESTS or status >= _SERVER_ERROR or status == 0:
-                    UPSTREAM_REQUESTS.labels(backend=backend, outcome=_outcome(status)).inc()
-                    if attempt < attempts:
-                        self._sleep_before_retry(attempt, retry_after)
-                        continue
-                else:
-                    return self._page_from(text, status, backend, started, allow_client_error=method.upper() != "GET")
+                redirect_detail = _response_redirect_detail(response, status, url)
+                action = self._retry_action(status, text, attempt, attempts, backend)
+                if action == "rebootstrap":
+                    self._rebootstrap()
+                    continue
+                if action == "sleep":
+                    self._sleep_before_retry(attempt, retry_after)
+                    continue
+                if action == "page":
+                    return self._page_from(
+                        text,
+                        status,
+                        backend,
+                        started,
+                        allow_client_error=method.upper() != "GET",
+                        redirect_detail=redirect_detail,
+                    )
             UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
             UPSTREAM_REQUESTS.labels(backend=backend, outcome="failed").inc()
             if status == _TOO_MANY_REQUESTS:
                 raise RateLimitedError(retry_after)
-            raise UpstreamError(status)
+            raise UpstreamError(status, redirect_detail)
+
+    def _retry_action(self, status: int, text: str, attempt: int, attempts: int, backend: Backend) -> str:
+        if self._blocked(status, text):
+            UPSTREAM_REQUESTS.labels(backend=backend, outcome="rechallenge").inc()
+            return "rebootstrap" if attempt < attempts else "stop"
+        if status == _TOO_MANY_REQUESTS or status >= _SERVER_ERROR or status == 0:
+            UPSTREAM_REQUESTS.labels(backend=backend, outcome=_outcome(status)).inc()
+            return "sleep" if attempt < attempts else "stop"
+        return "page"
+
+    def _reconcile_completed_manual_login(self) -> None:
+        """Clear login-in-progress only after a signed-in browser with no auth frame.
+
+        A changed title or a finished wait is not enough. The code form and a
+        signed-out profile leave the flag set.
+        """
+        if not self._logging_in or self._page is None or self._context is None:
+            return
+        try:
+            frames = list(self._page.frames)
+        except Exception:
+            return
+        if any(_is_auth_frame(getattr(frame, "url", "") or "") for frame in frames):
+            return
+        if not self._browser_is_signed_in():
+            return
+        self._logging_in = False
 
     def _page_from(
-        self, text: str, status: int, backend: Backend, started: float, *, allow_client_error: bool = False
+        self,
+        text: str,
+        status: int,
+        backend: Backend,
+        started: float,
+        *,
+        allow_client_error: bool = False,
+        redirect_detail: str = "",
     ) -> dict[str, Any]:
         """Turn a served response into a page, or refuse to call it one.
 
@@ -502,7 +918,7 @@ class OzonSession:
         except ValueError:
             data = None
         if 300 <= status < _CLIENT_ERROR or not isinstance(data, dict):
-            raise UpstreamError(status)
+            raise UpstreamError(status, redirect_detail)
         data.setdefault("_httpStatus", status)
         return data
 
@@ -513,7 +929,10 @@ class OzonSession:
         phrase, which may hold ``&`` — hands over an already-encoded path and
         gets it through intact. Escaping it again turned "тунец" into
         ``%25D1%2582…``, and Ozon answered that nonsense query with whatever it
-        felt like: car accessories, for canned tuna.
+        felt like: car accessories, for canned tuna. ``?``, ``&`` and ``=`` stay
+        raw so the page query remains the page query. A redirect is refused.
+        That refusal is why a live search 302 is ``upstream_unavailable``; the
+        server reason for that 302 was not established.
         """
         base = ENTRYPOINT_URL if backend == "entrypoint" else COMPOSER_URL
         return self._request("GET", base + quote(path, safe="/?=&%"), backend=backend)
@@ -558,6 +977,136 @@ class OzonSession:
             return self.is_authenticated(self.fetch("/my/orderlist"))
 
     # -- DOM reads (need the browser) ----------------------------------------
+    def read_public_page(self, path: str) -> dict[str, Any]:
+        """Open one public catalog path on the owned page and read that page only.
+
+        Restored tabs and popups are not adopted. ``goto`` and ``evaluate`` use
+        the same page object. A foreground about:blank tab is not evidence of
+        what this page contained. Navigation and the tile wait share
+        ``public_read_timeout``. A fixed sleep is not used. Live timing is
+        unmeasured.
+        """
+        checked = _public_catalog_path(path)
+        with self._lock:
+            if self._logging_in:
+                message = "login is in progress; finish it before reading the storefront"
+                raise OzonError(message)
+            self._ensure_browser()
+            if self._page is None or _page_is_closed(self._page):
+                message = "Public read has no open owned page. Nothing was read. This is not an empty search result."
+                raise OzonError(message)
+            brought_to_front = _bring_owned_page_forward(self._page)
+            started = time.monotonic()
+            total_ms = int(get_settings().public_read_timeout * 1000)
+            goto_ms = step_budget_ms(total_ms, _elapsed_ms(started))
+            if goto_ms <= 0:
+                message = (
+                    "Public read budget was already exhausted. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message)
+            try:
+                self._page.goto(
+                    HOME_URL.rstrip("/") + checked,
+                    wait_until="domcontentloaded",
+                    timeout=goto_ms,
+                )
+            except Exception as exc:
+                if not _is_timeout(exc):
+                    raise
+                message = (
+                    "Public navigation used the shared read budget. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message) from exc
+            self._raise_for_antibot_challenge()
+            goto_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
+            owned_class = url_class(getattr(self._page, "url", ""))
+            if owned_class == "about:blank":
+                lead = (
+                    "Public read navigated the owned page and it is still about:blank. "
+                    "Nothing was read. This is not an empty search result. "
+                )
+                _raise_public(self._page, lead, ready=False, goto_mark=goto_mark)
+            ready = _public_tile_ready(self._page, step_budget_ms(total_ms, _elapsed_ms(started)))
+            if not ready and not _empty_phrase_visible(self._page):
+                _raise_unread_tile(self._page, self._context, started, total_ms, brought_to_front, goto_mark)
+            self._raise_for_antibot_challenge()
+            probe_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
+            if _elapsed_ms(started) >= total_ms:
+                lead = (
+                    "Public read budget ended before the snapshot. "
+                    "Nothing was read. This is not an empty search result. "
+                )
+                _raise_public(self._page, lead, ready=ready, goto_mark=goto_mark, probe_mark=probe_mark)
+            self._last_used = time.time()
+            data = self._page.evaluate(PUBLIC_PAGE_READER)
+        if not isinstance(data, dict):
+            message = "Public storefront page did not return a document. Nothing was read."
+            raise OzonError(message)
+        result = dict(data)
+        result["diagnostics"] = _status(self._page, ready=ready, data=result)
+        result["diagnostics"]["goto_mark"] = goto_mark
+        result["diagnostics"]["probe_mark"] = probe_mark
+        return result
+
+    def probe_owned_search(self) -> dict[str, Any]:
+        """Structural counts for the current owned page. Does not navigate or adopt a tab.
+
+        The browser is not launched. Other pages contribute only a search-class
+        count. DOM counts are taken only when this page's URL class is
+        ``ozon-search``. No HTML, title, URL, or cookie is returned.
+        """
+        settings = get_settings()
+        report: dict[str, Any] = {
+            "storefront": settings.storefront,
+            "public_read_timeout": settings.public_read_timeout,
+            "browser_timeout": settings.browser_timeout,
+            "navigated": False,
+            "owned_page": "absent",
+            "dom_counts": "not_taken",
+            "url_class": "missing",
+            "query_keys": "not_taken",
+            "query_keys_dropped": 0,
+            "context_pages": None,
+            "owned_index": None,
+            "other_search_pages": None,
+            "elapsed_ms": 0,
+            "document_visibility": "unread",
+            "document_focused": None,
+        }
+        with self._lock:
+            if self._page is None or _page_is_closed(self._page):
+                return report
+            started = time.monotonic()
+            total_ms = int(settings.public_read_timeout * 1000)
+            mark = _identity_mark(self._page, self._context)
+            report.update(
+                owned_page="present",
+                url_class=mark["url_class"],
+                query_keys=mark["query_keys"],
+                query_keys_dropped=mark["query_keys_dropped"],
+                context_pages=mark["context_pages"],
+                owned_index=mark["owned_index"],
+                other_search_pages=mark["other_search_pages"],
+            )
+            if mark["url_class"] != "ozon-search":
+                report["elapsed_ms"] = _elapsed_ms(started)
+                return report
+            counts = _stage_counts(self._page, started=started, total_ms=total_ms)
+            if _budget_left(started, total_ms):
+                visibility, focused = _page_visibility(self._page)
+            else:
+                visibility, focused = "unread", None
+            report.update(counts)
+            report["document_visibility"] = visibility
+            report["document_focused"] = focused
+            report["dom_counts"] = "measured"
+            report["elapsed_ms"] = _elapsed_ms(started)
+            return report
+
     def page_extract(self, path: str, js: str, *, scroll: bool = False) -> Any:
         """Navigate to ``path`` and evaluate ``js`` against the rendered DOM.
 
@@ -620,10 +1169,12 @@ class OzonSession:
             return channel
 
     def _begin_login_form(self, login: str) -> str:
-        self._close_browser()
+        # Reuse a healthy context. _launch_browser checks the open page and
+        # starts a browser only when none exists.
         self._launch_browser()
         self._page.goto(HOME_URL + "my/orderlist", wait_until="domcontentloaded", timeout=self._browser_ms())
         self._page.wait_for_timeout(6_000)
+        self._raise_for_antibot_challenge()
         self._page.get_by_role("button", name="войти", exact=False).first.click(timeout=self._browser_ms(0.25))
         frame = self._auth_frame()
         self._page.wait_for_timeout(2_500)
@@ -634,11 +1185,13 @@ class OzonSession:
             frame = self._auth_frame()
             frame.locator("input[type=email]").first.fill(login)
         else:
-            frame.locator("input").first.fill(login)
+            phone_input = select_phone_input(frame)
+            phone_value = normalize_phone_input(login, separate_russian_prefix=has_separate_russian_prefix(frame))
+            phone_input.fill(phone_value)
         frame.get_by_role("button", name="Войти", exact=True).first.click(timeout=self._browser_ms(0.15))
         self._page.wait_for_timeout(5_000)
         self._require_code_step()
-        return "email" if by_mail else "phone"
+        return login_code_channel(by_mail=by_mail)
 
     def _require_code_step(self) -> None:
         """Prove Ozon is now asking for the code, or say what it is asking instead."""
@@ -648,6 +1201,9 @@ class OzonSession:
                 for frame in self._page.frames
             ):
                 return
+            for frame in self._page.frames:
+                if _is_auth_frame(frame.url or ""):
+                    raise_for_phone_format_error(frame)
             self._page.wait_for_timeout(1_000)
         # The form can echo an email, phone or auth token. Keep its text out
         # of caller-visible errors instead of trying to redact every format.

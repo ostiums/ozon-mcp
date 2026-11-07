@@ -4,10 +4,12 @@ fixed values live in ``constants``.
 
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ozon_mcp.session.proxy import validate_proxy_url
 
 
 class OzonSettings(BaseSettings):
@@ -24,6 +26,18 @@ class OzonSettings(BaseSettings):
 
     state_path: Path = Path("/data/state.json")
     """Legacy storageState, imported once to seed a brand-new profile."""
+
+    browser_channel: Literal["chrome"] | None = None
+    """Optional installed stable Chrome channel. Unset keeps Playwright's Chromium."""
+
+    storefront: Literal["composer", "public"] = "composer"
+    """Search and product cards. ``public`` reads the open browser page and does not call the composer API."""
+
+    proxy_url: SecretStr | None = None
+    """Explicit proxy for the browser and the HTTP client. Unset means a direct connection."""
+
+    proxy_remote_dns: bool = False
+    """When set with proxy_url, resolve destinations at the proxy and exclude only that host."""
 
     impersonate: str = "chrome124"
     """curl_cffi TLS-impersonation profile for direct HTTP requests."""
@@ -60,6 +74,24 @@ class OzonSettings(BaseSettings):
 
     browser_timeout: float = 60.0
     """Seconds to wait for a browser navigation or a login step."""
+
+    public_diagnostics: bool = False
+    """When true, ``session_status`` includes the current owned-page probe.
+
+    The probe does not launch a browser, navigate, or adopt another tab.
+    Off unless set. Search is unchanged.
+    """
+
+    public_read_timeout: float = Field(default=20.0, gt=0)
+    """Shared seconds for one public page: navigation, tile readiness, and the snapshot.
+
+    The steps share this clock. They do not each get ``browser_timeout``.
+    Keep it shorter than the MCP client's request deadline so a diagnostic
+    error can be returned. Live client deadlines were not measured.
+    """
+
+    shutdown_timeout: float = Field(default=5.0, gt=0)
+    """Seconds to wait for the session thread to close. A timeout does not delete profile locks."""
 
     idle_seconds: int = 600
     """Close the idle browser after this long; HTTP session stays alive."""
@@ -109,6 +141,22 @@ class OzonSettings(BaseSettings):
             for origin in self.allowed_origins
         ):
             raise ValueError("OZON_ALLOWED_ORIGINS must contain explicit HTTP(S) origins")
+
+    @field_validator("proxy_url", mode="before")
+    @classmethod
+    def _blank_proxy_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @model_validator(mode="after")
+    def _check_proxy(self) -> Self:
+        if self.proxy_url is not None:
+            validate_proxy_url(self.proxy_url.get_secret_value())
+        if self.proxy_remote_dns and self.proxy_url is None:
+            message = "OZON_PROXY_REMOTE_DNS requires OZON_PROXY_URL"
+            raise ValueError(message)
+        return self
 
 
 @cache

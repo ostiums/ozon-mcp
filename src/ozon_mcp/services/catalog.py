@@ -31,6 +31,7 @@ from ozon_mcp.models.orders import OrderProduct
 from ozon_mcp.parsing import catalog as parse
 from ozon_mcp.parsing.common import declared_counter, next_pages
 from ozon_mcp.parsing.orders import ORDER_NUMBER_RE, order_numbers_from_link, parse_order_products
+from ozon_mcp.services.public_catalog import product_public, public_storefront_enabled, require_composer, search_public
 from ozon_mcp.utils.money import to_kopecks
 from ozon_mcp.utils.serde import dumps
 
@@ -118,6 +119,8 @@ def search(
     if not query and not category:
         msg = "search needs a query, a category, or both"
         raise OzonError(msg)
+    if public_storefront_enabled():
+        return search_public(query, category, sort, page, filters, limit)
     base = f"/category/{category.strip('/')}/" if category else "/search/"
     tiles: list[Tile] = []
     seen: set[str] = set()
@@ -149,6 +152,7 @@ def search(
 
 
 def get_search_filters(query: str) -> list[SearchFilter]:
+    require_composer("get_search_filters")
     return parse.parse_filters(
         get_session().fetch(
             f"/search/?text={quote(query, safe='')}&layout_container=filtersDesktop&layout_page_index=2",
@@ -169,6 +173,10 @@ def product_details(
     "what is this and what does it cost" stays a single request.
     """
     sku = _sku(sku_or_url)
+    if public_storefront_enabled():
+        # Description and reviews are included only when the public page declared
+        # them. Composer endpoints are not called as a fallback.
+        return product_public(sku)
     card = parse.parse_product(get_session().fetch(f"/product/{sku}/"))
     # The card is asked for by sku, so that is the sku it has — the page does not
     # always repeat it, and answering None for what the caller just passed in is
@@ -184,6 +192,7 @@ def product_details(
 
 
 def get_photos(sku_or_url: str) -> list[str]:
+    require_composer("get_photos")
     return parse.parse_gallery(get_session().fetch(f"/product/{_sku(sku_or_url)}/"))
 
 
@@ -199,6 +208,7 @@ def get_reviews(sku_or_url: str, limit: int = 30, sort: str = "useful") -> Revie
     A card's reviews cover its variants, so a review may be about another size or
     colour; each one says which.
     """
+    require_composer("get_reviews")
     sku = _sku(sku_or_url)
     session = get_session()
     path = f"/product/{sku}/reviews/?sort={REVIEW_SORTS.get(sort, sort)}"
@@ -225,10 +235,12 @@ def get_reviews(sku_or_url: str, limit: int = 30, sort: str = "useful") -> Revie
 
 
 def get_characteristics(sku_or_url: str) -> list[parse.Characteristic]:
+    require_composer("get_characteristics")
     return parse.parse_characteristics(get_session().fetch(f"/product/{_sku(sku_or_url)}/"))
 
 
 def get_description(sku_or_url: str) -> Description:
+    require_composer("get_description")
     sku = _sku(sku_or_url)
     data = get_session().fetch(
         f"/product/{sku}/?layout_container=pdpPage2column&layout_page_index=2", backend="entrypoint"
@@ -243,6 +255,7 @@ def delivery_estimate(sku_or_url: str) -> DeliveryEstimate:
     page. That endpoint is pinned to Ozon's current layout, so if it stops
     answering we read the rendered page instead rather than returning nothing.
     """
+    require_composer("delivery_estimate")
     sku = _sku(sku_or_url)
     async_data = base64.b64encode(dumps({"ci": WEB_DELIVERY_CI, "url": f"/product/{sku}/"}).encode()).decode()
     state = get_session().widget_state(WEB_DELIVERY_STATE_ID, async_data).get("state")
@@ -294,6 +307,7 @@ def find_cheaper(sku_or_url: str, limit: int = 10) -> Cheaper:
     because the price could not be parsed is the one outcome a caller cannot
     tell from good news, so it raises instead.
     """
+    require_composer("find_cheaper")
     product = product_details(sku_or_url)
     base_price = to_kopecks(product.price)
     if base_price is None:
