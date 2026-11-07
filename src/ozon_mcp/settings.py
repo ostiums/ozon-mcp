@@ -75,6 +75,14 @@ class OzonSettings(BaseSettings):
     browser_timeout: float = 60.0
     """Seconds to wait for a browser navigation or a login step."""
 
+    public_read_timeout: float = Field(default=20.0, gt=0)
+    """Shared seconds for one public page: navigation, tile readiness, and the snapshot.
+
+    The steps share this clock. They do not each get ``browser_timeout``.
+    Keep it shorter than the MCP client's request deadline so a diagnostic
+    error can be returned. Live client deadlines were not measured.
+    """
+
     shutdown_timeout: float = Field(default=5.0, gt=0)
     """Seconds to wait for the session thread to close. A timeout does not delete profile locks."""
 

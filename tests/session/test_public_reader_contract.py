@@ -92,6 +92,70 @@ def _session(page: _Page) -> OzonSession:
     return session
 
 
+def test_goto_and_tile_wait_share_the_public_read_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 1_000.0}
+    page = _Page()
+    session = _session(page)
+    monkeypatch.setattr("ozon_mcp.session.transport.time.monotonic", lambda: clock["now"])
+    monkeypatch.setattr(
+        "ozon_mcp.session.transport.get_settings",
+        type("Settings", (), {"public_read_timeout": 20, "browser_timeout": 60}),
+    )
+
+    def goto(url: str, **kwargs: object) -> None:
+        page.calls.append(("goto", kwargs.get("timeout")))
+        clock["now"] += 8
+        page.url = url
+
+    page.goto = goto  # type: ignore[method-assign]
+    session.read_public_page("/search/?text=alpha")
+    goto_timeout = next(call[1] for call in page.calls if isinstance(call, tuple) and call[0] == "goto")
+    wait_call = next(call for call in page.calls if isinstance(call, tuple) and call[0] == "wait")
+    ready_timeout = wait_call[1].wait["timeout"]
+    assert goto_timeout == 17_000
+    assert ready_timeout == 9_000
+    assert goto_timeout != 60_000
+    assert ready_timeout != 60_000
+    assert 8_000 + ready_timeout + 3_000 == 20_000
+
+
+def test_navigation_timeout_returns_diagnostics_and_does_not_start_the_tile_wait() -> None:
+    page = _Page()
+    session = _session(page)
+
+    def goto(url: str, **kwargs: object) -> None:
+        del url, kwargs
+        page.calls.append("goto")
+        raise type("TimeoutError", (Exception,), {})("navigation deadline")
+
+    page.goto = goto  # type: ignore[method-assign]
+    with pytest.raises(OzonError, match="url_class=") as caught:
+        session.read_public_page("/search/?text=alpha")
+    message = str(caught.value)
+    assert "tile_selector_ready=False" in message
+    assert "html_present=False" in message
+    assert "text=alpha" not in message
+    assert page.calls == ["front", "goto"]
+
+
+def test_a_full_navigation_grant_leaves_no_second_tile_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 1_000.0}
+    page = _Page()
+    session = _session(page)
+    monkeypatch.setattr("ozon_mcp.session.transport.time.monotonic", lambda: clock["now"])
+
+    def goto(url: str, **kwargs: object) -> None:
+        page.calls.append(("goto", kwargs.get("timeout")))
+        clock["now"] += int(kwargs["timeout"]) / 1000
+        page.url = url
+
+    page.goto = goto  # type: ignore[method-assign]
+    with pytest.raises(OzonError, match="tile_selector_ready=False"):
+        session.read_public_page("/search/?text=alpha")
+    assert [call[0] for call in page.calls if isinstance(call, tuple)] == ["goto"]
+    assert "evaluate" not in page.calls
+
+
 def test_reader_payload_is_what_the_parser_receives() -> None:
     page = _Page()
     other = _Page()

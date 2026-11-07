@@ -11,9 +11,30 @@ from ozon_mcp.parsing.public_storefront import (
     assert_reader_is_passive,
     document_from_html,
     products_from_document,
+    snapshot_reserve_ms,
+    step_budget_ms,
 )
+from ozon_mcp.settings import OzonSettings
 
 FIXTURE = Path("tests/fixtures/public-storefront-search.html").read_text(encoding="utf-8")
+
+
+def test_public_read_budget_is_shared_not_two_full_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OZON_PUBLIC_READ_TIMEOUT", raising=False)
+    monkeypatch.delenv("OZON_BROWSER_TIMEOUT", raising=False)
+    settings = OzonSettings()
+    assert settings.public_read_timeout == 20
+    assert settings.browser_timeout == 60
+    total = 20_000
+    navigation = step_budget_ms(total, 0)
+    readiness = step_budget_ms(total, navigation)
+    assert navigation == 17_000
+    assert readiness == 0
+    assert navigation + readiness + snapshot_reserve_ms(total) == total
+    assert navigation + step_budget_ms(total, 0) != 120_000
+    after_eight_seconds = step_budget_ms(total, 8_000)
+    assert after_eight_seconds == 9_000
+    assert 8_000 + after_eight_seconds + snapshot_reserve_ms(total) == total
 
 
 def test_reader_does_not_touch_secrets_or_the_network() -> None:

@@ -260,6 +260,7 @@ different answers.
 | `OZON_RETRY_BACKOFF_SECONDS` | `1` | Base wait between attempts, doubled and jittered |
 | `OZON_RETRY_CAP_SECONDS` | `20` | Longest wait, including a `Retry-After` Ozon asks for |
 | `OZON_BROWSER_TIMEOUT` | `60` | Seconds for a browser navigation or a login step |
+| `OZON_PUBLIC_READ_TIMEOUT` | `20` | Shared seconds for one public read: navigation, tile readiness, and the snapshot. Keep it shorter than the MCP client deadline |
 | `OZON_SHUTDOWN_TIMEOUT` | `5` | Seconds to wait for session close. A timeout does not delete profile locks |
 | `OZON_IDLE_SECONDS` | `600` | Close the idle browser; the HTTP session stays |
 | `OZON_TRANSPORT` | `stdio` | `stdio` (client spawns the process), `http` (streamable HTTP at `/mcp`) or `sse` (deprecated, `/sse`) |

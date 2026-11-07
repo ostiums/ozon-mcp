@@ -19,6 +19,7 @@ from ozon_mcp.models.catalog import Characteristic, Variant, VariantOption
 
 _PRODUCT_URL: Final = re.compile(r"/product/(?:[^/]*-)?(\d{6,})/?$")
 _ORIGIN = "https://www.ozon.ru"
+_SNAPSHOT_RESERVE_MS: Final = 3_000
 
 # The browser only copies schema.org nodes. It does not read cookies, storage,
 # network traffic, or the user agent.
@@ -67,6 +68,24 @@ class PublicProduct:
     description: str | None = None
     characteristics: list[Characteristic] = field(default_factory=list)
     variants: list[Variant] = field(default_factory=list)
+
+
+def snapshot_reserve_ms(total_ms: int) -> int:
+    """Time held back so a snapshot or a diagnostic return is not starved."""
+    if total_ms <= 0:
+        return 0
+    return min(_SNAPSHOT_RESERVE_MS, total_ms // 5)
+
+
+def step_budget_ms(total_ms: int, elapsed_ms: int) -> int:
+    """Milliseconds left for the next wait on one shared clock.
+
+    Navigation and tile readiness both use this. Spending the whole
+    ``total_ms`` on navigation leaves no second full timeout. The snapshot
+    reserve is not given to either wait.
+    """
+    spent = max(0, elapsed_ms)
+    return max(0, total_ms - spent - snapshot_reserve_ms(total_ms))
 
 
 def url_class(url: object) -> str:

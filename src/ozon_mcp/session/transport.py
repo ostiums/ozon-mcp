@@ -48,6 +48,7 @@ from ozon_mcp.parsing.public_storefront import (
     PUBLIC_PAGE_READER,
     format_public_diagnostics,
     snapshot_counts,
+    step_budget_ms,
     url_class,
 )
 from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR
@@ -225,8 +226,18 @@ def _bring_owned_page_forward(page: Any) -> None:
         return
 
 
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.monotonic() - started) * 1000))
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    return isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError"
+
+
 def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
-    """True when the inspected tile is visible before the budget ends."""
+    """True when the inspected tile is visible before the remaining budget ends."""
+    if timeout_ms <= 0:
+        return False
     try:
         page.locator(PUBLIC_TILE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
     except Exception:
@@ -777,8 +788,9 @@ class OzonSession:
 
         Restored tabs and popups are not adopted. ``goto`` and ``evaluate`` use
         the same page object. A foreground about:blank tab is not evidence of
-        what this page contained. The tile selector is waited for within the
-        browser budget; a fixed sleep is not used. Live timing is unmeasured.
+        what this page contained. Navigation and the tile wait share
+        ``public_read_timeout``. A fixed sleep is not used. Live timing is
+        unmeasured.
         """
         checked = _public_catalog_path(path)
         with self._lock:
@@ -790,7 +802,31 @@ class OzonSession:
                 message = "Public read has no open owned page. Nothing was read. This is not an empty search result."
                 raise OzonError(message)
             _bring_owned_page_forward(self._page)
-            self._page.goto(HOME_URL.rstrip("/") + checked, wait_until="domcontentloaded", timeout=self._browser_ms())
+            started = time.monotonic()
+            total_ms = int(get_settings().public_read_timeout * 1000)
+            goto_ms = step_budget_ms(total_ms, _elapsed_ms(started))
+            if goto_ms <= 0:
+                message = (
+                    "Public read budget was already exhausted. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message)
+            try:
+                self._page.goto(
+                    HOME_URL.rstrip("/") + checked,
+                    wait_until="domcontentloaded",
+                    timeout=goto_ms,
+                )
+            except Exception as exc:
+                if not _is_timeout(exc):
+                    raise
+                message = (
+                    "Public navigation used the shared read budget. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
+                )
+                raise OzonError(message) from exc
             self._raise_for_antibot_challenge()
             owned_class = url_class(getattr(self._page, "url", ""))
             if owned_class == "about:blank":
@@ -800,7 +836,7 @@ class OzonSession:
                     + format_public_diagnostics(_status(self._page, ready=False, data={}))
                 )
                 raise OzonError(message)
-            ready = _public_tile_ready(self._page, self._browser_ms())
+            ready = _public_tile_ready(self._page, step_budget_ms(total_ms, _elapsed_ms(started)))
             if not ready and not _empty_phrase_visible(self._page):
                 message = (
                     "Public tile selector was not ready before the deadline. "
@@ -809,6 +845,13 @@ class OzonSession:
                 )
                 raise OzonError(message)
             self._raise_for_antibot_challenge()
+            if _elapsed_ms(started) >= total_ms:
+                message = (
+                    "Public read budget ended before the snapshot. "
+                    "Nothing was read. This is not an empty search result. "
+                    + format_public_diagnostics(_status(self._page, ready=ready, data={}))
+                )
+                raise OzonError(message)
             self._last_used = time.time()
             data = self._page.evaluate(PUBLIC_PAGE_READER)
         if not isinstance(data, dict):
