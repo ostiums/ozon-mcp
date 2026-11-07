@@ -6,8 +6,18 @@ from pydantic import Field
 
 from ozon_mcp.dependencies import run_blocking
 from ozon_mcp.mcp_server import mcp
-from ozon_mcp.models.catalog import Cheaper, DeliveryEstimate, Description, ProductCard, Reviews, SearchFilter, Tile
+from ozon_mcp.models.catalog import (
+    Cheaper,
+    DeliveryEstimate,
+    Description,
+    OwnedSearchProbe,
+    ProductCard,
+    Reviews,
+    SearchFilter,
+    Tile,
+)
 from ozon_mcp.services import catalog
+from ozon_mcp.services.public_catalog import owned_search_probe as probe_owned_search
 from ozon_mcp.utils.annotations import Limit, Page, ReviewSort, SearchSort, SkuOrUrl
 
 
@@ -139,3 +149,19 @@ async def find_cheaper(sku_or_url: SkuOrUrl, limit: Limit = 10) -> Cheaper:
     cheaper" for a product it failed to price.
     """
     return await run_blocking(lambda: catalog.find_cheaper(sku_or_url, limit))
+
+
+@mcp.tool()
+async def owned_search_probe() -> OwnedSearchProbe:
+    """Read the page this process already owns. Call it with no arguments:
+    owned_search_probe().
+
+    It does not navigate, does not launch a browser, does not adopt another
+    tab, and does not evaluate caller-supplied script. Other tabs contribute
+    only how many of them are classified as an Ozon search URL. Structural
+    counts are taken only when the owned page itself is an Ozon search page.
+    The result has query parameter names, not values, and no URL, title, HTML,
+    or account data. public_read_timeout and browser_timeout are the configured
+    budgets. This does not repair search.
+    """
+    return await run_blocking(probe_owned_search)

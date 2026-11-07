@@ -214,6 +214,38 @@ class Cheaper(OzonModel):
     cheaper: list[Tile] = Field(default_factory=list)
 
 
+class OwnedSearchProbe(OzonModel):
+    """Identity and structural counts for the one page this process already owns.
+
+    Query names are included only for an Ozon search URL. Values, the URL,
+    the title, markup, and every other tab's body are absent. ``navigated``
+    is false: this read does not call goto.
+    """
+
+    storefront: str
+    public_read_timeout: float
+    browser_timeout: float
+    navigated: bool
+    owned_page: str
+    dom_counts: str
+    url_class: str
+    query_keys: str
+    query_keys_dropped: int
+    context_pages: int | None = None
+    owned_index: int | None = None
+    other_search_pages: int | None = None
+    elapsed_ms: int
+    paginator: str = "not_taken"
+    tile_grids: str = "not_taken"
+    tile_roots_attached: str = "not_taken"
+    product_anchors_attached: str = "not_taken"
+    title_spans_attached: str = "not_taken"
+    title_spans_visible: str = "not_taken"
+    first_title_visible: str = "not_taken"
+    document_visibility: str = "unread"
+    document_focused: str = "not_taken"
+
+
 class DeliveryEstimate(OzonModel):
     """When a product would arrive, and what that estimate is relative to.
 

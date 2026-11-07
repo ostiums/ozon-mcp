@@ -13,6 +13,7 @@ from ozon_mcp.parsing.public_storefront import (
     document_from_html,
     format_public_diagnostics,
     products_from_document,
+    query_key_names,
     snapshot_reserve_ms,
     step_budget_ms,
 )
@@ -47,6 +48,58 @@ def test_reader_does_not_touch_secrets_or_the_network() -> None:
     assert "querySelectorAll" in PUBLIC_PAGE_READER
     assert "application/ld+json" in PUBLIC_PAGE_READER
     assert "script, style, noscript, template, iframe" in PUBLIC_PAGE_READER
+
+
+def test_query_key_names_drop_values_and_unsafe_names() -> None:
+    keys, dropped = query_key_names(
+        "https://www.ozon.ru/search/?sorting=price&text=HX+Nutrition&brand_was_predicted=true&a.b=secret"
+    )
+    assert keys == "brand_was_predicted,sorting,text"
+    assert dropped == 1
+    assert "HX" not in keys
+    assert "secret" not in keys
+    assert "a.b" not in keys
+    assert query_key_names("https://www.ozon.ru/search/") == ("none", 0)
+
+
+def test_read_marks_keep_query_names_and_drop_the_url() -> None:
+    line = format_public_diagnostics(
+        {
+            "title": "present",
+            "url_class": "ozon-search",
+            "tile_selector_ready": False,
+            "deadline_probe": "measured",
+            "goto_mark": {
+                "ms": 400,
+                "context_pages": 2,
+                "owned_index": 0,
+                "other_search_pages": 1,
+                "url_class": "ozon-search",
+                "query_keys": "page,sorting,text",
+                "query_keys_dropped": 0,
+                "paginator": 1,
+                "tile_grids": 0,
+            },
+            "probe_mark": {
+                "ms": 20000,
+                "context_pages": 2,
+                "owned_index": 0,
+                "other_search_pages": 1,
+                "url_class": "ozon-search",
+                "query_keys": "https://www.ozon.ru/search/?text=secret",
+                "query_keys_dropped": 0,
+            },
+        }
+    )
+    assert "goto_ms=400" in line
+    assert "probe_ms=20000" in line
+    assert "goto_owned_index=0" in line
+    assert "goto_query_keys=page,sorting,text" in line
+    assert "goto_paginator=1" in line
+    assert "goto_tile_grids=0" in line
+    assert "probe_query_keys=error" in line
+    assert "https://" not in line
+    assert "secret" not in line
 
 
 def test_deadline_probe_line_has_counts_and_no_page_text() -> None:

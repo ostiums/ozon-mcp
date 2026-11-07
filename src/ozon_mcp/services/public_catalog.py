@@ -5,7 +5,7 @@ from urllib.parse import quote
 from ozon_mcp.constants import SEARCH_SORTS
 from ozon_mcp.dependencies import get_session
 from ozon_mcp.errors import OzonError
-from ozon_mcp.models.catalog import ProductCard, Tile
+from ozon_mcp.models.catalog import OwnedSearchProbe, ProductCard, Tile
 from ozon_mcp.parsing.public_storefront import (
     PublicProduct,
     format_public_diagnostics,
@@ -89,6 +89,55 @@ def _declared_products(path: str) -> list[PublicProduct]:
         )
         raise OzonError(message)
     return products
+
+
+_COUNT_FIELDS: tuple[str, ...] = (
+    "paginator",
+    "tile_grids",
+    "tile_roots_attached",
+    "product_anchors_attached",
+    "title_spans_attached",
+    "title_spans_visible",
+    "first_title_visible",
+)
+_VISIBILITY: frozenset[str] = frozenset({"visible", "hidden", "prerender", "unread"})
+
+
+def _count_token(value: object) -> str:
+    if value is None:
+        return "not_taken"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if isinstance(value, int) and value >= 0:
+        return str(value)
+    return "error"
+
+
+def owned_search_probe() -> OwnedSearchProbe:
+    """The current owned page only. No navigation and no other tab's body."""
+    raw = get_session().probe_owned_search()
+    payload: dict[str, object] = {
+        "storefront": raw.get("storefront"),
+        "public_read_timeout": raw.get("public_read_timeout"),
+        "browser_timeout": raw.get("browser_timeout"),
+        "navigated": False,
+        "owned_page": raw.get("owned_page"),
+        "dom_counts": raw.get("dom_counts"),
+        "url_class": raw.get("url_class"),
+        "query_keys": raw.get("query_keys"),
+        "query_keys_dropped": raw.get("query_keys_dropped"),
+        "context_pages": raw.get("context_pages"),
+        "owned_index": raw.get("owned_index"),
+        "other_search_pages": raw.get("other_search_pages"),
+        "elapsed_ms": raw.get("elapsed_ms"),
+        "document_visibility": raw.get("document_visibility")
+        if raw.get("document_visibility") in _VISIBILITY
+        else "unread",
+        "document_focused": _count_token(raw.get("document_focused")),
+    }
+    for field in _COUNT_FIELDS:
+        payload[field] = _count_token(raw.get(field))
+    return OwnedSearchProbe.model_validate(payload)
 
 
 def _search_path(query: str | None, category: str | None, sort: str, page: int) -> str:

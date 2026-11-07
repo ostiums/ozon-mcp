@@ -13,13 +13,17 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any, Final, override
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from ozon_mcp.models.catalog import Characteristic, Variant, VariantOption
 
 _PRODUCT_URL: Final = re.compile(r"/product/(?:[^/]*-)?(\d{6,})/?$")
 _ORIGIN = "https://www.ozon.ru"
 _SNAPSHOT_RESERVE_MS: Final = 3_000
+_QUERY_KEY: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,40}$")
+_URL_CLASSES: Final = frozenset(
+    {"about:blank", "ozon-search", "ozon-product", "ozon-home", "ozon-other", "external", "missing"}
+)
 
 # The browser only copies schema.org nodes. It does not read cookies, storage,
 # network traffic, or the user agent.
@@ -92,6 +96,27 @@ def step_budget_ms(total_ms: int, elapsed_ms: int) -> int:
     """
     spent = max(0, elapsed_ms)
     return max(0, total_ms - spent - snapshot_reserve_ms(total_ms))
+
+
+def query_key_names(url: object) -> tuple[str, int]:
+    """Sorted parameter names, and how many names were dropped.
+
+    Values are never returned. A name that is not a short token is counted
+    and omitted, so a secret stuffed into a name is not copied out.
+    """
+    if not isinstance(url, str) or not url.strip():
+        return "none", 0
+    pairs = parse_qsl(urlsplit(url.strip()).query, keep_blank_values=True)
+    kept: set[str] = set()
+    dropped = 0
+    for key, _value in pairs:
+        if _QUERY_KEY.fullmatch(key):
+            kept.add(key)
+        else:
+            dropped += 1
+    if not kept:
+        return "none", dropped
+    return ",".join(sorted(kept)), dropped
 
 
 def url_class(url: object) -> str:
@@ -176,6 +201,49 @@ def _format_measured_probe(diagnostics: dict[str, Any]) -> str:
     return "deadline_probe=measured; " + "; ".join(parts)
 
 
+def _query_keys_token(value: object) -> str:
+    if value in {"none", "not_taken"}:
+        return str(value)
+    if isinstance(value, str) and value and all(_QUERY_KEY.fullmatch(part) for part in value.split(",")):
+        return value
+    return "error"
+
+
+def _mark_token(field: str, value: object) -> str:
+    if field == "query_keys":
+        return _query_keys_token(value)
+    if field == "url_class":
+        return str(value) if isinstance(value, str) and value in _URL_CLASSES else "error"
+    return _probe_token(field, value)
+
+
+def _format_mark(prefix: str, mark: object, *, with_counts: bool) -> str:
+    if not isinstance(mark, dict):
+        return f"{prefix}_mark=missing"
+    fields = (
+        "ms",
+        "context_pages",
+        "owned_index",
+        "other_search_pages",
+        "url_class",
+        "query_keys",
+        "query_keys_dropped",
+    )
+    parts = [f"{prefix}_{field}={_mark_token(field, mark.get(field))}" for field in fields]
+    if with_counts:
+        parts.extend(f"{prefix}_{field}={_probe_token(field, mark.get(field))}" for field in _PROBE_FIELDS[3:])
+    return "; ".join(parts)
+
+
+def _format_read_marks(diagnostics: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if "goto_mark" in diagnostics:
+        parts.append(_format_mark("goto", diagnostics.get("goto_mark"), with_counts=True))
+    if "probe_mark" in diagnostics:
+        parts.append(_format_mark("probe", diagnostics.get("probe_mark"), with_counts=False))
+    return "; ".join(parts)
+
+
 def format_public_diagnostics(diagnostics: object) -> str:
     """One stable status line. It never includes markup or the page URL."""
     if not isinstance(diagnostics, dict):
@@ -183,17 +251,22 @@ def format_public_diagnostics(diagnostics: object) -> str:
     head = _diagnostic_head(diagnostics)
     probe = diagnostics.get("deadline_probe")
     if probe == "skipped":
-        return f"{head}; deadline_probe=skipped; dom_counts=not_taken; html_present=False"
-    if probe == "measured":
-        return f"{head}; {_format_measured_probe(diagnostics)}; html_present=False"
-    raw_counts = diagnostics.get("counts")
-    counts: dict[str, Any] = raw_counts if isinstance(raw_counts, dict) else {}
-    return (
-        f"{head}; html_present={bool(counts.get('html_present'))}; "
-        f"tile_roots={int(counts.get('tile_roots') or 0)}; "
-        f"product_hrefs={int(counts.get('product_hrefs') or 0)}; "
-        f"headline_prices={int(counts.get('headline_prices') or 0)}"
-    )
+        line = f"{head}; deadline_probe=skipped; dom_counts=not_taken; html_present=False"
+    elif probe == "measured":
+        line = f"{head}; {_format_measured_probe(diagnostics)}; html_present=False"
+    else:
+        raw_counts = diagnostics.get("counts")
+        counts: dict[str, Any] = raw_counts if isinstance(raw_counts, dict) else {}
+        line = (
+            f"{head}; html_present={bool(counts.get('html_present'))}; "
+            f"tile_roots={int(counts.get('tile_roots') or 0)}; "
+            f"product_hrefs={int(counts.get('product_hrefs') or 0)}; "
+            f"headline_prices={int(counts.get('headline_prices') or 0)}"
+        )
+    marks = _format_read_marks(diagnostics)
+    if marks:
+        return f"{line}; {marks}"
+    return line
 
 
 def product_link(href: str) -> tuple[str, str] | None:

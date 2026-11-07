@@ -48,6 +48,7 @@ from ozon_mcp.parsing.public_storefront import (
     DEADLINE_VISIBILITY,
     PUBLIC_PAGE_READER,
     format_public_diagnostics,
+    query_key_names,
     snapshot_counts,
     step_budget_ms,
     url_class,
@@ -272,22 +273,67 @@ def _budget_left(started: float, total_ms: int) -> bool:
     return _elapsed_ms(started) < total_ms
 
 
-def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_front: str) -> dict[str, Any]:
-    """Non-waiting attached and visible counts on the owned page.
+def _listed_pages(context: Any) -> list[Any] | None:
+    """The context's page objects, or None when the list cannot be read.
 
-    ``count`` and ``is_visible`` return immediately. Nothing here waits, and
-    the HTML reader is not evaluated. A stage that would start after the
-    shared budget is ``None`` (not taken), not a measured zero.
+    Only the list is read. No page body, title, or URL is touched here.
     """
-    measured: dict[str, Any] = {"deadline_probe": "measured", "bring_to_front": brought_to_front}
+    if context is None:
+        return None
+    try:
+        return list(context.pages)
+    except Exception:
+        return None
+
+
+def _identity_mark(page: Any, context: Any) -> dict[str, Any]:
+    """Which owned page this is, without its URL, title, or any other tab's body.
+
+    Other pages contribute a count of ``ozon-search`` classifications only.
+    Query names are returned only when this page itself is that class.
+    """
+    pages = _listed_pages(context)
+    owned_index: int | None = None
+    other_search = 0
+    if pages is not None:
+        for index, candidate in enumerate(pages):
+            if candidate is page:
+                owned_index = index
+                continue
+            try:
+                candidate_url = getattr(candidate, "url", "")
+            except Exception:
+                candidate_url = ""
+            if url_class(candidate_url) == "ozon-search":
+                other_search += 1
+    try:
+        raw_url = getattr(page, "url", "")
+    except Exception:
+        raw_url = ""
+    klass = url_class(raw_url)
+    if klass == "ozon-search":
+        keys, dropped = query_key_names(raw_url)
+    else:
+        keys, dropped = "not_taken", 0
+    return {
+        "context_pages": len(pages) if pages is not None else None,
+        "owned_index": owned_index,
+        "other_search_pages": other_search if pages is not None else None,
+        "url_class": klass,
+        "query_keys": keys,
+        "query_keys_dropped": dropped,
+    }
+
+
+def _stage_counts(page: Any, *, started: float, total_ms: int) -> dict[str, Any]:
+    """Non-waiting attached and visible counts. A late stage is None, not zero."""
+    measured: dict[str, Any] = {}
     for name, selector in PUBLIC_TILE_STAGES:
         field = _STAGE_FIELDS[name]
         measured[field] = _immediate_count(page, selector) if _budget_left(started, total_ms) else None
     if not _budget_left(started, total_ms):
         measured["title_spans_visible"] = None
         measured["first_title_visible"] = None
-        measured["document_visibility"] = "unread"
-        measured["document_focused"] = None
         return measured
     try:
         measured["title_spans_visible"] = int(page.locator(PUBLIC_TILE_SELECTOR).filter(visible=True).count())
@@ -305,6 +351,21 @@ def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_fr
             measured["first_title_visible"] = "error"
     else:
         measured["first_title_visible"] = None
+    return measured
+
+
+def _public_mark(page: Any, context: Any, *, started: float, total_ms: int) -> dict[str, Any]:
+    """Identity plus structural counts at one instant of the shared clock."""
+    mark = _identity_mark(page, context)
+    mark["ms"] = _elapsed_ms(started)
+    mark.update(_stage_counts(page, started=started, total_ms=total_ms))
+    return mark
+
+
+def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_front: str) -> dict[str, Any]:
+    """Non-waiting counts on the owned page. The HTML reader is not evaluated."""
+    measured: dict[str, Any] = {"deadline_probe": "measured", "bring_to_front": brought_to_front}
+    measured.update(_stage_counts(page, started=started, total_ms=total_ms))
     if not _budget_left(started, total_ms):
         measured["document_visibility"] = "unread"
         measured["document_focused"] = None
@@ -329,29 +390,53 @@ def _page_visibility(page: Any) -> tuple[str, bool | None]:
     return visibility, focused_bit
 
 
-def _raise_unread_tile(page: Any, started: float, total_ms: int, brought_to_front: str) -> None:
-    """Deadline error with a bounded probe, or an explicit skipped probe."""
-    if _budget_left(started, total_ms):
-        probe = _measure_deadline(page, started=started, total_ms=total_ms, brought_to_front=brought_to_front)
-        detail = "The HTML snapshot was not taken."
-    else:
-        probe = {"deadline_probe": "skipped", "bring_to_front": brought_to_front}
-        detail = "The deadline probe was not taken."
+def _raise_public(
+    page: Any,
+    lead: str,
+    *,
+    ready: bool,
+    goto_mark: dict[str, Any] | None,
+    probe_mark: dict[str, Any] | None = None,
+    probe: dict[str, Any] | None = None,
+) -> None:
+    """Raise a diagnostic error. Marks carry counts and query names, not the URL."""
     try:
         title = page.title()
     except Exception:
         title = ""
-    status = {
+    status: dict[str, Any] = {
         "title": title if isinstance(title, str) else "",
         "url_class": url_class(getattr(page, "url", "")),
-        "tile_selector_ready": False,
-        **probe,
+        "tile_selector_ready": ready,
     }
-    message = (
-        "Public tile selector was not ready before the deadline. "
-        f"{detail} This is not an empty search result. " + format_public_diagnostics(status)
-    )
-    raise OzonError(message)
+    if probe:
+        status.update(probe)
+    if goto_mark is not None:
+        status["goto_mark"] = goto_mark
+    if probe_mark is not None:
+        status["probe_mark"] = probe_mark
+    raise OzonError(lead + format_public_diagnostics(status))
+
+
+def _raise_unread_tile(
+    page: Any,
+    context: Any,
+    started: float,
+    total_ms: int,
+    brought_to_front: str,
+    goto_mark: dict[str, Any],
+) -> None:
+    """Deadline error with a bounded probe, or an explicit skipped probe."""
+    probe_mark = _identity_mark(page, context)
+    probe_mark["ms"] = _elapsed_ms(started)
+    if _budget_left(started, total_ms):
+        probe = _measure_deadline(page, started=started, total_ms=total_ms, brought_to_front=brought_to_front)
+        detail = "The HTML snapshot was not taken. "
+    else:
+        probe = {"deadline_probe": "skipped", "bring_to_front": brought_to_front}
+        detail = "The deadline probe was not taken. "
+    lead = "Public tile selector was not ready before the deadline. " + detail + "This is not an empty search result. "
+    _raise_public(page, lead, ready=False, goto_mark=goto_mark, probe_mark=probe_mark, probe=probe)
 
 
 def _phrase_visible(page: Any, phrase: str) -> bool:
@@ -937,25 +1022,25 @@ class OzonSession:
                 )
                 raise OzonError(message) from exc
             self._raise_for_antibot_challenge()
+            goto_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
             owned_class = url_class(getattr(self._page, "url", ""))
             if owned_class == "about:blank":
-                message = (
+                lead = (
                     "Public read navigated the owned page and it is still about:blank. "
                     "Nothing was read. This is not an empty search result. "
-                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
                 )
-                raise OzonError(message)
+                _raise_public(self._page, lead, ready=False, goto_mark=goto_mark)
             ready = _public_tile_ready(self._page, step_budget_ms(total_ms, _elapsed_ms(started)))
             if not ready and not _empty_phrase_visible(self._page):
-                _raise_unread_tile(self._page, started, total_ms, brought_to_front)
+                _raise_unread_tile(self._page, self._context, started, total_ms, brought_to_front, goto_mark)
             self._raise_for_antibot_challenge()
+            probe_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
             if _elapsed_ms(started) >= total_ms:
-                message = (
+                lead = (
                     "Public read budget ended before the snapshot. "
                     "Nothing was read. This is not an empty search result. "
-                    + format_public_diagnostics(_status(self._page, ready=ready, data={}))
                 )
-                raise OzonError(message)
+                _raise_public(self._page, lead, ready=ready, goto_mark=goto_mark, probe_mark=probe_mark)
             self._last_used = time.time()
             data = self._page.evaluate(PUBLIC_PAGE_READER)
         if not isinstance(data, dict):
@@ -963,7 +1048,64 @@ class OzonSession:
             raise OzonError(message)
         result = dict(data)
         result["diagnostics"] = _status(self._page, ready=ready, data=result)
+        result["diagnostics"]["goto_mark"] = goto_mark
+        result["diagnostics"]["probe_mark"] = probe_mark
         return result
+
+    def probe_owned_search(self) -> dict[str, Any]:
+        """Structural counts for the current owned page. Does not navigate or adopt a tab.
+
+        The browser is not launched. Other pages contribute only a search-class
+        count. DOM counts are taken only when this page's URL class is
+        ``ozon-search``. No HTML, title, URL, or cookie is returned.
+        """
+        settings = get_settings()
+        report: dict[str, Any] = {
+            "storefront": settings.storefront,
+            "public_read_timeout": settings.public_read_timeout,
+            "browser_timeout": settings.browser_timeout,
+            "navigated": False,
+            "owned_page": "absent",
+            "dom_counts": "not_taken",
+            "url_class": "missing",
+            "query_keys": "not_taken",
+            "query_keys_dropped": 0,
+            "context_pages": None,
+            "owned_index": None,
+            "other_search_pages": None,
+            "elapsed_ms": 0,
+            "document_visibility": "unread",
+            "document_focused": None,
+        }
+        with self._lock:
+            if self._page is None or _page_is_closed(self._page):
+                return report
+            started = time.monotonic()
+            total_ms = int(settings.public_read_timeout * 1000)
+            mark = _identity_mark(self._page, self._context)
+            report.update(
+                owned_page="present",
+                url_class=mark["url_class"],
+                query_keys=mark["query_keys"],
+                query_keys_dropped=mark["query_keys_dropped"],
+                context_pages=mark["context_pages"],
+                owned_index=mark["owned_index"],
+                other_search_pages=mark["other_search_pages"],
+            )
+            if mark["url_class"] != "ozon-search":
+                report["elapsed_ms"] = _elapsed_ms(started)
+                return report
+            counts = _stage_counts(self._page, started=started, total_ms=total_ms)
+            if _budget_left(started, total_ms):
+                visibility, focused = _page_visibility(self._page)
+            else:
+                visibility, focused = "unread", None
+            report.update(counts)
+            report["document_visibility"] = visibility
+            report["document_focused"] = focused
+            report["dom_counts"] = "measured"
+            report["elapsed_ms"] = _elapsed_ms(started)
+            return report
 
     def page_extract(self, path: str, js: str, *, scroll: bool = False) -> Any:
         """Navigate to ``path`` and evaluate ``js`` against the rendered DOM.

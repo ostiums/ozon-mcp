@@ -44,6 +44,7 @@ class _Locator:
 
     def wait_for(self, **kwargs: object) -> None:
         self.wait = kwargs
+        self.page.on_wait()
         if not self.ready:
             message = "deadline"
             raise TimeoutError(message)
@@ -77,6 +78,7 @@ class _Page:
         self.visibility_state = "visible"
         self.focused = True
         self.note_count = lambda _selector: None
+        self.on_wait = lambda: None
 
     def is_closed(self) -> bool:
         return False
@@ -135,8 +137,9 @@ def test_goto_and_tile_wait_share_the_public_read_budget(monkeypatch: pytest.Mon
     page.goto = goto  # type: ignore[method-assign]
     session.read_public_page("/search/?text=alpha")
     goto_timeout = next(call[1] for call in page.calls if isinstance(call, tuple) and call[0] == "goto")
-    wait_call = next(call for call in page.calls if isinstance(call, tuple) and call[0] == "wait")
-    ready_timeout = wait_call[1].wait["timeout"]
+    waited = [call[1] for call in page.calls if isinstance(call, tuple) and call[0] == "wait" and call[1].wait]
+    assert len(waited) == 1
+    ready_timeout = waited[0].wait["timeout"]
     assert goto_timeout == 17_000
     assert ready_timeout == 9_000
     assert goto_timeout != 60_000
@@ -193,8 +196,10 @@ def test_reader_payload_is_what_the_parser_receives() -> None:
     document = _session(page).read_public_page("/search/?text=alpha")
     assert page.calls[0] == "front"
     assert page.calls[1][0] == "goto"
-    assert page.calls[2][0] == "wait"
-    assert page.calls[3] == ("evaluate", PUBLIC_PAGE_READER)
+    waited = [call for call in page.calls if isinstance(call, tuple) and call[0] == "wait" and call[1].wait]
+    assert len(waited) == 1
+    evaluated = [call for call in page.calls if isinstance(call, tuple) and call[0] == "evaluate"]
+    assert evaluated == [("evaluate", PUBLIC_PAGE_READER)]
     assert other.calls == []
     assert page.locator_selector == PUBLIC_TILE_SELECTOR
     assert "html" in PUBLIC_PAGE_READER
@@ -215,7 +220,10 @@ def test_service_reads_the_owned_page_payload(monkeypatch: pytest.MonkeyPatch) -
     page = _Page()
     monkeypatch.setattr(public_catalog, "get_session", lambda: _session(page))
     tiles = public_catalog.search_public("alpha", None, "popular", 1, None, 24)
-    assert [call[0] for call in page.calls if isinstance(call, tuple)] == ["goto", "wait", "evaluate"]
+    kinds = [call[0] for call in page.calls if isinstance(call, tuple)]
+    assert kinds[0] == "goto"
+    assert kinds[-1] == "evaluate"
+    assert sum(1 for call in page.calls if isinstance(call, tuple) and call[0] == "wait" and call[1].wait) == 1
     assert tiles[0].sku == "1600000001"
     assert tiles[0].displayed_price == "100 ₽"
     assert tiles[0].price is None
@@ -287,9 +295,112 @@ def test_deadline_probe_separates_attached_visible_and_document_state() -> None:
     assert len(waits) == 1
     assert waits[0].wait["state"] == "visible"
     assert waits[0].wait["timeout"] == 17_000
-    assert page.filter_calls == [{"visible": True}]
+    assert page.filter_calls == [{"visible": True}, {"visible": True}]
     scripts = [call[1] for call in page.calls if isinstance(call, tuple) and call[0] == "evaluate"]
     assert scripts == [DEADLINE_VISIBILITY]
+
+
+class _Foreign:
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    def locator(self, *_args: object, **_kwargs: object) -> object:
+        message = "foreign tab"
+        raise AssertionError(message)
+
+    def title(self) -> str:
+        message = "foreign title"
+        raise AssertionError(message)
+
+    def evaluate(self, *_args: object, **_kwargs: object) -> object:
+        message = "foreign eval"
+        raise AssertionError(message)
+
+
+def test_goto_and_probe_marks_identify_the_owned_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 1_000.0}
+    page = _Page(ready=False)
+    foreign = _Foreign("https://www.ozon.ru/search/?text=secret")
+    session = _session(page)
+    session._context = type("Context", (), {"pages": [foreign, page]})()
+    monkeypatch.setattr("ozon_mcp.session.transport.time.monotonic", lambda: clock["now"])
+    grid = next(selector for name, selector in PUBLIC_TILE_STAGES if name == "tile_grids")
+    paginator = next(selector for name, selector in PUBLIC_TILE_STAGES if name == "paginator")
+
+    def on_wait() -> None:
+        clock["now"] += 5
+        page.url += "&brand_was_predicted=true"
+        page.attached_counts[paginator] = 1
+        page.attached_counts[grid] = 4
+
+    page.on_wait = on_wait
+    with pytest.raises(OzonError, match="not ready") as raised:
+        session.read_public_page("/search/?page=1&text=alpha&sorting=price")
+    text = str(raised.value)
+    assert "goto_ms=" in text
+    assert "probe_ms=" in text
+    assert "goto_context_pages=2" in text
+    assert "probe_context_pages=2" in text
+    assert "goto_owned_index=1" in text
+    assert "probe_owned_index=1" in text
+    assert "goto_other_search_pages=1" in text
+    assert "goto_query_keys=page,sorting,text" in text
+    assert "probe_query_keys=brand_was_predicted,page,sorting,text" in text
+    assert "goto_tile_grids=0" in text
+    assert "tile_grids=4" in text
+    assert "goto_paginator=0" in text
+    assert "paginator=1" in text
+    assert "alpha" not in text
+    assert "secret" not in text
+    assert "https://" not in text
+
+
+def test_owned_search_probe_does_not_navigate_or_read_other_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OZON_PUBLIC_READ_TIMEOUT", raising=False)
+    monkeypatch.delenv("OZON_BROWSER_TIMEOUT", raising=False)
+    monkeypatch.delenv("OZON_STOREFRONT", raising=False)
+    page = _Page()
+    page.url = "https://www.ozon.ru/search/?page=1&text=alpha&sorting=price&brand_was_predicted=true"
+    for name, selector in PUBLIC_TILE_STAGES:
+        page.attached_counts[selector] = 1 if name == "paginator" else 0
+    foreign = _Foreign("https://www.ozon.ru/search/?text=secret&from_global=true")
+    session = _session(page)
+    session._context = type("Context", (), {"pages": [foreign, page]})()
+    session._ensure_browser = lambda: (_ for _ in ()).throw(AssertionError("launch"))  # type: ignore[method-assign]
+    page.goto = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("goto"))  # type: ignore[method-assign]
+    monkeypatch.setattr(public_catalog, "get_session", lambda: session)
+    probed = public_catalog.owned_search_probe()
+    dumped = probed.model_dump_json()
+    assert probed.navigated is False
+    assert probed.owned_page == "present"
+    assert probed.dom_counts == "measured"
+    assert probed.owned_index == 1
+    assert probed.context_pages == 2
+    assert probed.other_search_pages == 1
+    assert probed.url_class == "ozon-search"
+    assert probed.query_keys == "brand_was_predicted,page,sorting,text"
+    assert probed.paginator == "1"
+    assert probed.tile_grids == "0"
+    assert probed.public_read_timeout == 20
+    assert "alpha" not in dumped
+    assert "secret" not in dumped
+    assert "https://" not in dumped
+    assert "title" not in probed.model_dump()
+
+    page.url = "https://www.ozon.ru/"
+    page.locator = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("counted"))  # type: ignore[method-assign]
+    home = public_catalog.owned_search_probe()
+    assert home.url_class == "ozon-home"
+    assert home.dom_counts == "not_taken"
+    assert home.query_keys == "not_taken"
+    assert home.tile_grids == "not_taken"
+    assert home.navigated is False
+
+    session._page = None
+    absent = public_catalog.owned_search_probe()
+    assert absent.owned_page == "absent"
+    assert absent.navigated is False
+    assert absent.dom_counts == "not_taken"
 
 
 def test_deadline_probe_stops_at_the_shared_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -308,15 +419,13 @@ def test_deadline_probe_stops_at_the_shared_budget(monkeypatch: pytest.MonkeyPat
 
     page.goto = goto  # type: ignore[method-assign]
     page.note_count = note
-    with pytest.raises(OzonError, match="deadline_probe=measured") as raised:
+    with pytest.raises(OzonError, match="deadline_probe=skipped") as raised:
         session.read_public_page("/search/?text=alpha")
     text = str(raised.value)
-    assert "paginator=0" in text
-    assert "tile_grids=not_taken" in text
-    assert "title_spans_attached=not_taken" in text
-    assert "title_spans_visible=not_taken" in text
-    assert "document_visibility=unread" in text
-    assert "dom_counts=not_taken" not in text
+    assert "goto_paginator=0" in text
+    assert "goto_tile_grids=not_taken" in text
+    assert "dom_counts=not_taken" in text
+    assert "title_spans_attached=0" not in text
     scripts = [call[1] for call in page.calls if isinstance(call, tuple) and call[0] == "evaluate"]
     assert scripts == []
 
@@ -336,6 +445,7 @@ def test_deadline_probe_is_skipped_when_the_budget_is_already_gone(monkeypatch: 
         session.read_public_page("/search/?text=alpha")
     text = str(raised.value)
     assert "dom_counts=not_taken" in text
-    assert "title_spans_attached" not in text
+    assert "goto_title_spans_attached=not_taken" in text
+    assert "title_spans_attached=0" not in text
     assert "tile_roots=0" not in text
     assert page.calls == ["front"]
