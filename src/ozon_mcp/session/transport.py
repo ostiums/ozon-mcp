@@ -171,6 +171,7 @@ class OzonSession:
     # -- browser lifecycle ---------------------------------------------------
     def _launch_browser(self) -> None:
         if self._page is not None:
+            self._raise_for_antibot_challenge()
             return
         fresh = not (self._profile / "Default").exists()
         _make_private(self._profile, create=True)
@@ -192,9 +193,15 @@ class OzonSession:
         BROWSER_ACTIVE.set(1)
         self._page.goto(HOME_URL, wait_until="domcontentloaded", timeout=self._browser_ms(1.5))
         self._page.wait_for_timeout(12_000)  # let Variti set cookies
-        if _ANTIBOT.search((self._page.title() or "").lower()):
-            self._close_browser()
-            raise RuntimeError("antibot challenge not passed")
+        self._raise_for_antibot_challenge()
+
+    def _raise_for_antibot_challenge(self) -> None:
+        """Keep a blocked page open so the account owner can pass the challenge."""
+        if not _ANTIBOT.search((self._page.title() or "").lower()):
+            return
+        self._logging_in = False
+        logger.warning("Ozon antibot challenge is open; complete it in the browser and retry")
+        raise RuntimeError("Ozon antibot challenge is open; complete the manual check in the browser and retry")
 
     def back_up_profile(self) -> None:
         """Snapshot a profile that is known to be signed in.
