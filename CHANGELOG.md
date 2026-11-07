@@ -8,6 +8,18 @@ Notable changes are documented here. The format follows
 
 ### Added
 
+- Optional `OZON_BROWSER_CHANNEL=chrome` selects the installed stable Chrome channel. The default remains Playwright's Chromium.
+- Optional `OZON_PROXY_URL` is the only proxy, shared by the browser and the HTTP client. `trust_env` is false. With no URL, libcurl is given an empty proxy so it does not inherit `http_proxy`. `OZON_PROXY_REMOTE_DNS` adds Chromium remote-DNS rules that exclude only the proxy host.
+- Redirect responses name a fixed host and path class. The destination, query and headers are not included, and no redirect is followed.
+- `OZON_SHUTDOWN_TIMEOUT` bounds the wait for session close. SIGTERM closes stdio's input so a blocked read can return. Neither was retested on a deployed process.
+
+### Fixed
+
+- Login reuses an open browser instead of closing it first, and distinguishes network, access-denied and challenge titles. A network title is not described as a CAPTCHA.
+- Phone login fills ten national digits only after one confirmed `+7` country control. Ambiguous forms fail before fill. The code step does not claim push, SMS or a phone call.
+- A Chromium profile lock is removed only when its owner is this machine and the pid is dead. A live or foreign lock is left in place.
+- A signed-in browser with no auth frame clears a stale login-in-progress flag. A code form or a signed-out profile does not.
+
 - `OZON_ENABLE_CART` permits only cart quantity and selection changes, without
   payments, cancellations or other account writes. `OZON_ENABLE_WRITES` retains
   its broad behavior, including cart access; `session_status` and login responses

@@ -1,0 +1,57 @@
+[
+  {
+    "name": "observed_prefix",
+    "html": "<form><div><svg /><span>+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": true
+  },
+  {
+    "name": "unknown_prefix",
+    "html": "<form><div><svg /><span>+44</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "duplicate_controls",
+    "html": "<form><div><svg /><span>+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><div><svg /><span>+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "hidden_group",
+    "html": "<form><div hidden=\"hidden\"><svg /><span>+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "unrelated_span",
+    "html": "<form><div><svg /><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><span>+7</span><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "nested_span",
+    "html": "<form><div><svg /><section><span>+7</span></section><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "extra_group_text",
+    "html": "<form><div><svg /><span>+7</span><span>extra</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "hidden_prefix",
+    "html": "<form><div><svg /><span hidden=\"hidden\">+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "not_readonly",
+    "html": "<form><div><svg /><span>+7</span><input autocomplete=\"off\"  role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "wrong_name",
+    "html": "<form><div><svg /><span>+7</span><input autocomplete=\"off\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"other\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  },
+  {
+    "name": "wrong_autocomplete",
+    "html": "<form><div><svg /><span>+7</span><input autocomplete=\"tel\" readonly=\"readonly\" role=\"combobox\" type=\"text\" name=\"filter\" /></div><input type=\"tel\" id=\"phone\" /></form>",
+    "expected_prefix": false
+  }
+]

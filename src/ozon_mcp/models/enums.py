@@ -60,7 +60,7 @@ class LoginStage(StrEnum):
     """Where a two-step login has got to."""
 
     CODE_REQUESTED = "code_requested"
-    """Ozon has sent a one-time code; it goes to submit_login_code()."""
+    """Ozon is asking for a one-time code; pass it to submit_login_code()."""
 
     SIGNED_IN = "signed_in"
     """The code was accepted."""

@@ -18,6 +18,7 @@ from ozon_mcp.http_security import HTTPAccessMiddleware
 from ozon_mcp.main import mcp
 from ozon_mcp.mcp_server import _transport_security
 from ozon_mcp.settings import get_settings
+from ozon_mcp.shutdown import install_term_stdin_unblock
 from ozon_mcp.utils.observability import METRICS_PATH, metrics_endpoint
 
 logger = logging.getLogger("ozon_mcp")
@@ -51,6 +52,7 @@ def main() -> None:
     settings = get_settings()
     try:
         if settings.transport == "stdio":
+            install_term_stdin_unblock()
             mcp.run()
             return
 

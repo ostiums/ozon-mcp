@@ -29,9 +29,9 @@ import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final, Self
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
-from curl_cffi import requests as curl_requests
+from curl_cffi import CurlOpt, requests as curl_requests
 from playwright.sync_api import sync_playwright
 
 from ozon_mcp.constants import (
@@ -44,13 +44,22 @@ from ozon_mcp.constants import (
     WIDGET_URL,
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
+from ozon_mcp.session.page_health import classify_page_title, health_message
+from ozon_mcp.session.phone_form import (
+    has_separate_russian_prefix,
+    login_code_channel,
+    normalize_phone_input,
+    raise_for_phone_format_error,
+    select_phone_input,
+)
+from ozon_mcp.session.profile_lock import clear_dead_profile_lock
+from ozon_mcp.session.proxy import browser_network_args, http_proxy_choice, playwright_proxy
 from ozon_mcp.settings import get_settings
 from ozon_mcp.utils.observability import BROWSER_ACTIVE, SESSION_BOOTSTRAPS, UPSTREAM_LATENCY, UPSTREAM_REQUESTS
 from ozon_mcp.utils.serde import dumps, loads
 
 logger = logging.getLogger("ozon_mcp")
 
-_ANTIBOT: Final = re.compile(r"antibot|ограничен|нет соединения|доступ", re.IGNORECASE)
 # Cookies that carry the login; only these are worth syncing back to the browser.
 _SESSION_COOKIES: Final[frozenset[str]] = frozenset({
     "__Secure-access-token",
@@ -149,6 +158,54 @@ def _copy_private_profile(source: Path, destination: Path) -> None:
     _make_private(destination)
 
 
+def _redirect_detail(location: object, request_url: str) -> str:
+    """Return fixed labels only. Destination text is never included."""
+    prefix = "Redirect destination: "
+    if location is None or (isinstance(location, str) and not location):
+        return prefix + "host=missing; path=unknown."
+    if not isinstance(location, str):
+        return prefix + "host=malformed; path=unknown."
+    return prefix + _redirect_classes(location, request_url)
+
+
+def _redirect_classes(location: str, request_url: str) -> str:
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in location) or "\\" in location:
+        return "host=malformed; path=unknown."
+    try:
+        target = urlsplit(urljoin(request_url, location))
+        host = target.hostname
+        port = target.port
+    except (ValueError, UnicodeError):
+        return "host=malformed; path=unknown."
+    if port is not None and port <= 0:
+        return "host=malformed; path=unknown."
+    if target.scheme not in {"https", "http"} or not host or target.username is not None or target.password is not None:
+        return "host=malformed; path=unknown."
+    if host == "www.ozon.ru":
+        host_class = "same-canonical-ozon"
+    elif host == "ozon.ru" or host.endswith(".ozon.ru"):
+        host_class = "other-ozon"
+    else:
+        host_class = "external"
+    path = target.path
+    if path in {"/", "/search/"}:
+        path_class = path
+    elif path == "/api" or path.startswith("/api/"):
+        path_class = "api-path"
+    else:
+        path_class = "other-path"
+    return f"host={host_class}; path={path_class}."
+
+
+def _response_redirect_detail(response: Any, status: int, url: str) -> str:
+    if response is None or not 300 <= status < _CLIENT_ERROR:
+        return ""
+    location = None
+    with suppress(Exception):
+        location = response.headers.get("Location")
+    return _redirect_detail(location, url)
+
+
 class OzonSession:
     """Persistent-profile browser plus a curl_cffi transport (thread-safe)."""
 
@@ -178,15 +235,25 @@ class OzonSession:
         _make_private(self._backup)
         _make_private(self._seed_state)
         self._clear_stale_lock()
+        settings = get_settings()
+        proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
+        launch_kwargs: dict[str, Any] = {
+            "user_data_dir": str(self._profile),
+            "headless": False,
+            "args": [*LAUNCH_ARGS, *browser_network_args(proxy_url=proxy_url, remote_dns=settings.proxy_remote_dns)],
+            "locale": "ru-RU",
+            "timezone_id": "Europe/Moscow",
+            "viewport": {"width": 1366, "height": 900},
+            # Keep SIGTERM for this process. Playwright's default handler would replace it.
+            "handle_sigterm": False,
+        }
+        proxy = playwright_proxy(proxy_url)
+        if proxy is not None:
+            launch_kwargs["proxy"] = proxy
+        if settings.browser_channel is not None:
+            launch_kwargs["channel"] = settings.browser_channel
         self._playwright = sync_playwright().start()
-        self._context = self._playwright.chromium.launch_persistent_context(
-            user_data_dir=str(self._profile),
-            headless=False,
-            args=list(LAUNCH_ARGS),
-            locale="ru-RU",
-            timezone_id="Europe/Moscow",
-            viewport={"width": 1366, "height": 900},
-        )
+        self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
         if fresh:
             self._seed_from_state()
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
@@ -196,12 +263,13 @@ class OzonSession:
         self._raise_for_antibot_challenge()
 
     def _raise_for_antibot_challenge(self) -> None:
-        """Keep a blocked page open so the account owner can pass the challenge."""
-        if not _ANTIBOT.search((self._page.title() or "").lower()):
+        """Stop on an unhealthy title. A network title is not a CAPTCHA."""
+        message = health_message(classify_page_title(self._page.title() or ""))
+        if message is None:
             return
         self._logging_in = False
-        logger.warning("Ozon antibot challenge is open; complete it in the browser and retry")
-        raise RuntimeError("Ozon antibot challenge is open; complete the manual check in the browser and retry")
+        logger.warning("%s", message)
+        raise RuntimeError(message)
 
     def back_up_profile(self) -> None:
         """Snapshot a profile that is known to be signed in.
@@ -240,17 +308,9 @@ class OzonSession:
         return True
 
     def _clear_stale_lock(self) -> None:
-        """Drop a Chromium profile lock left by a killed process.
-
-        A profile may only be open once, and Chromium refuses to start if the
-        lock is present — including when the owner died without cleaning up,
-        which is exactly what happens when a container is stopped mid-call.
-        """
-        for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
-            lock = self._profile / name
-            if lock.is_symlink() or lock.exists():
-                lock.unlink(missing_ok=True)
-                logger.info("removed stale profile lock %s", name)
+        """Drop a lock whose owner is dead. A live or foreign owner blocks startup."""
+        for name in clear_dead_profile_lock(self._profile):
+            logger.info("removed stale profile lock %s", name)
 
     def _seed_from_state(self) -> None:
         """Import a legacy ``state.json`` into a brand-new profile.
@@ -314,11 +374,31 @@ class OzonSession:
         )
         self._page.wait_for_timeout(500)
         self._headers = {k: v for k, v in captured.items() if k.lower() in HARVEST_HEADERS}
-        self._http = curl_requests.Session(impersonate=self._impersonate)
+        self._http = curl_requests.Session(**self._http_client_kwargs())
         for cookie in self._context.cookies():
             self._http.cookies.set(cookie["name"], cookie["value"], domain=".ozon.ru")
         self._synced = {c["name"]: c["value"] for c in self._context.cookies() if c["name"] in _SESSION_COOKIES}
         self._last_used = time.time()
+
+    def _http_client_kwargs(self) -> dict[str, Any]:
+        """Explicit proxy, or an empty proxy so libcurl ignores the environment.
+
+        curl_cffi stores ``trust_env`` but does not apply it. An explicit proxy
+        is used for every scheme, and HTTPS uses CONNECT. ``NO_PROXY`` does not
+        replace that proxy. With no configured proxy, an empty proxy string
+        stops libcurl from reading ``http_proxy``.
+        """
+        settings = get_settings()
+        proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
+        choice = http_proxy_choice(proxy_url)
+        kwargs: dict[str, Any] = {"impersonate": self._impersonate, "trust_env": False}
+        if choice.disable_env_proxy:
+            kwargs["curl_options"] = {CurlOpt.PROXY: ""}
+            return kwargs
+        kwargs["proxy"] = choice.proxy
+        if choice.proxy_auth is not None:
+            kwargs["proxy_auth"] = choice.proxy_auth
+        return kwargs
 
     def _browser_is_signed_in(self) -> bool:
         """Whether the profile still holds a session, judged by its own cookie."""
@@ -437,11 +517,16 @@ class OzonSession:
         # Without an upstream idempotency key, replaying it can order twice.
         attempts = max(1, settings.request_attempts) if method.upper() in {"GET", "HEAD"} else 1
         with self._lock:
+            if getattr(self, "_page", None) is not None and getattr(self, "_context", None) is not None:
+                self._reconcile_completed_manual_login()
             if self._logging_in:
                 raise OzonError("login is in progress; finish submit_login_code() before reading account data")
             status, text, retry_after = 0, "", None
             started = time.monotonic()
+            response: Any = None
+            redirect_detail = ""
             for attempt in range(1, attempts + 1):
+                redirect_detail = ""
                 self._ensure_http()
                 headers = dict(self._headers)
                 headers["accept"] = "application/json"
@@ -460,29 +545,69 @@ class OzonSession:
                     retry_after = self._retry_after(response) if status == _TOO_MANY_REQUESTS else None
                 # A transport failure carries no status; it is retried like a 5xx.
                 except Exception:
+                    response = None
                     status, text, retry_after = 0, "", None
                     logger.debug("upstream transport error (%s)", backend)
 
-                if self._blocked(status, text):
-                    UPSTREAM_REQUESTS.labels(backend=backend, outcome="rechallenge").inc()
-                    if attempt < attempts:
-                        self._rebootstrap()
-                        continue
-                elif status == _TOO_MANY_REQUESTS or status >= _SERVER_ERROR or status == 0:
-                    UPSTREAM_REQUESTS.labels(backend=backend, outcome=_outcome(status)).inc()
-                    if attempt < attempts:
-                        self._sleep_before_retry(attempt, retry_after)
-                        continue
-                else:
-                    return self._page_from(text, status, backend, started, allow_client_error=method.upper() != "GET")
+                redirect_detail = _response_redirect_detail(response, status, url)
+                action = self._retry_action(status, text, attempt, attempts, backend)
+                if action == "rebootstrap":
+                    self._rebootstrap()
+                    continue
+                if action == "sleep":
+                    self._sleep_before_retry(attempt, retry_after)
+                    continue
+                if action == "page":
+                    return self._page_from(
+                        text,
+                        status,
+                        backend,
+                        started,
+                        allow_client_error=method.upper() != "GET",
+                        redirect_detail=redirect_detail,
+                    )
             UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
             UPSTREAM_REQUESTS.labels(backend=backend, outcome="failed").inc()
             if status == _TOO_MANY_REQUESTS:
                 raise RateLimitedError(retry_after)
-            raise UpstreamError(status)
+            raise UpstreamError(status, redirect_detail)
+
+    def _retry_action(self, status: int, text: str, attempt: int, attempts: int, backend: Backend) -> str:
+        if self._blocked(status, text):
+            UPSTREAM_REQUESTS.labels(backend=backend, outcome="rechallenge").inc()
+            return "rebootstrap" if attempt < attempts else "stop"
+        if status == _TOO_MANY_REQUESTS or status >= _SERVER_ERROR or status == 0:
+            UPSTREAM_REQUESTS.labels(backend=backend, outcome=_outcome(status)).inc()
+            return "sleep" if attempt < attempts else "stop"
+        return "page"
+
+    def _reconcile_completed_manual_login(self) -> None:
+        """Clear login-in-progress only after a signed-in browser with no auth frame.
+
+        A changed title or a finished wait is not enough. The code form and a
+        signed-out profile leave the flag set.
+        """
+        if not self._logging_in or self._page is None or self._context is None:
+            return
+        try:
+            frames = list(self._page.frames)
+        except Exception:
+            return
+        if any(_is_auth_frame(getattr(frame, "url", "") or "") for frame in frames):
+            return
+        if not self._browser_is_signed_in():
+            return
+        self._logging_in = False
 
     def _page_from(
-        self, text: str, status: int, backend: Backend, started: float, *, allow_client_error: bool = False
+        self,
+        text: str,
+        status: int,
+        backend: Backend,
+        started: float,
+        *,
+        allow_client_error: bool = False,
+        redirect_detail: str = "",
     ) -> dict[str, Any]:
         """Turn a served response into a page, or refuse to call it one.
 
@@ -502,7 +627,7 @@ class OzonSession:
         except ValueError:
             data = None
         if 300 <= status < _CLIENT_ERROR or not isinstance(data, dict):
-            raise UpstreamError(status)
+            raise UpstreamError(status, redirect_detail)
         data.setdefault("_httpStatus", status)
         return data
 
@@ -513,7 +638,10 @@ class OzonSession:
         phrase, which may hold ``&`` — hands over an already-encoded path and
         gets it through intact. Escaping it again turned "тунец" into
         ``%25D1%2582…``, and Ozon answered that nonsense query with whatever it
-        felt like: car accessories, for canned tuna.
+        felt like: car accessories, for canned tuna. ``?``, ``&`` and ``=`` stay
+        raw so the page query remains the page query. A redirect is refused.
+        That refusal is why a live search 302 is ``upstream_unavailable``; the
+        server reason for that 302 was not established.
         """
         base = ENTRYPOINT_URL if backend == "entrypoint" else COMPOSER_URL
         return self._request("GET", base + quote(path, safe="/?=&%"), backend=backend)
@@ -620,10 +748,12 @@ class OzonSession:
             return channel
 
     def _begin_login_form(self, login: str) -> str:
-        self._close_browser()
+        # Reuse a healthy context. _launch_browser checks the open page and
+        # starts a browser only when none exists.
         self._launch_browser()
         self._page.goto(HOME_URL + "my/orderlist", wait_until="domcontentloaded", timeout=self._browser_ms())
         self._page.wait_for_timeout(6_000)
+        self._raise_for_antibot_challenge()
         self._page.get_by_role("button", name="войти", exact=False).first.click(timeout=self._browser_ms(0.25))
         frame = self._auth_frame()
         self._page.wait_for_timeout(2_500)
@@ -634,11 +764,13 @@ class OzonSession:
             frame = self._auth_frame()
             frame.locator("input[type=email]").first.fill(login)
         else:
-            frame.locator("input").first.fill(login)
+            phone_input = select_phone_input(frame)
+            phone_value = normalize_phone_input(login, separate_russian_prefix=has_separate_russian_prefix(frame))
+            phone_input.fill(phone_value)
         frame.get_by_role("button", name="Войти", exact=True).first.click(timeout=self._browser_ms(0.15))
         self._page.wait_for_timeout(5_000)
         self._require_code_step()
-        return "email" if by_mail else "phone"
+        return login_code_channel(by_mail=by_mail)
 
     def _require_code_step(self) -> None:
         """Prove Ozon is now asking for the code, or say what it is asking instead."""
@@ -648,6 +780,9 @@ class OzonSession:
                 for frame in self._page.frames
             ):
                 return
+            for frame in self._page.frames:
+                if _is_auth_frame(frame.url or ""):
+                    raise_for_phone_format_error(frame)
             self._page.wait_for_timeout(1_000)
         # The form can echo an email, phone or auth token. Keep its text out
         # of caller-visible errors instead of trying to redact every format.

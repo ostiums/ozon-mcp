@@ -64,6 +64,7 @@ class UpstreamError(OzonError):
 
     def __init__(self, status: int, detail: str = "") -> None:
         self.status = status
+        self.detail = detail
         described = f"HTTP {status}" if status else "no response"
         super().__init__(
             (

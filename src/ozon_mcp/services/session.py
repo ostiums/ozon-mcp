@@ -47,13 +47,19 @@ def session_status() -> SessionStatus:
 
 
 def start_login(login: str) -> LoginStep:
-    """Ask Ozon to send a one-time code to ``login`` (email or phone)."""
+    """Ask Ozon for a one-time code for ``login`` (email or phone)."""
     channel = get_session().begin_login(login)
-    return LoginStep(
-        stage=LoginStage.CODE_REQUESTED,
-        login=login,
-        detail=f"Ozon is sending a code by {channel}; pass it to submit_login_code()",
-    )
+    if channel == "email":
+        detail = (
+            "Ozon is asking for a one-time code for this email login. "
+            "Pass the code the account owner received to submit_login_code()."
+        )
+    else:
+        detail = (
+            "Ozon is asking for a one-time code. The login page did not show whether it arrived "
+            "by push, SMS or a phone call. Pass the code the account owner received to submit_login_code()."
+        )
+    return LoginStep(stage=LoginStage.CODE_REQUESTED, login=login, detail=detail)
 
 
 def submit_login_code(code: str) -> SessionStatus:
