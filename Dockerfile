@@ -1,15 +1,15 @@
 # OZON's antibot blocks headless Chromium, so the session bootstrap runs a real
 # Chromium under Xvfb; thereafter requests go out over curl_cffi. Xvfb is started
 # by entrypoint.sh before the server.
-FROM python:3.13-slim
+FROM python:3.13.18-slim@sha256:09a17cad02668ae61ece136b4fd36ac3849e14f670ebedb637ea3e15580525bc
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PLAYWRIGHT_BROWSERS_PATH=/ms-browsers \
     DEBIAN_FRONTEND=noninteractive \
-    OZON_STATE=/data/state.json
+    OZON_STATE_PATH=/data/state.json
 
 WORKDIR /app
 # README.md comes along because pyproject declares it as the package readme —
@@ -30,7 +30,8 @@ RUN uv sync --frozen --no-dev && chmod +x entrypoint.sh
 # is written back on every call.
 VOLUME ["/data"]
 
-# Only listened on when OZON_TRANSPORT=sse; serves both /sse and /metrics.
+# HTTP/SSE require OZON_AUTH_TOKEN and OZON_HOST=0.0.0.0 inside the container.
+# Publish to loopback with -p 127.0.0.1:8084:8084; /metrics also requires auth.
 EXPOSE 8084
 
 ENTRYPOINT ["./entrypoint.sh"]

@@ -63,6 +63,65 @@ def test_the_walk_stops_at_the_count_the_page_displays(session: FakeSession) -> 
     assert [tile.sku for tile in favorites.list_favorites(100)] == ["1", "2"]
 
 
+def test_a_stale_paginator_does_not_hide_another_continuation(session: FakeSession) -> None:
+    first = _tiles("1", counter=2, paginator="/a-stale")
+    first["widgetStates"]["paginator-2-default-1"] = dumps({"nextPage": "/b-next"})
+    session.pages = {
+        "/my/favorites": first,
+        "/a-stale": _tiles("1"),
+        "/b-next": _tiles("2"),
+    }
+    assert [tile.sku for tile in favorites.list_favorites(100)] == ["1", "2"]
+
+
+def test_an_explicit_zero_counter_does_not_return_recommendations(session: FakeSession) -> None:
+    session.pages = {"/my/favorites": _tiles("1", counter=0)}
+    assert favorites.list_favorites(100) == []
+
+
+def test_an_overlapping_page_can_still_lead_to_new_products(session: FakeSession) -> None:
+    session.pages = {
+        "/my/favorites": _tiles("1", counter=2, paginator="/overlap"),
+        "/overlap": _tiles("1", paginator="/fresh"),
+        "/fresh": _tiles("2"),
+    }
+    assert [tile.sku for tile in favorites.list_favorites(100)] == ["1", "2"]
+
+
+def test_a_twice_empty_page_does_not_infer_more_scroll_pages(session: FakeSession) -> None:
+    empty = _tiles()
+    empty["pageInfo"] = {"url": "/empty?layout_page_index=2"}
+    session.pages = {
+        "/initial": _tiles("1", paginator="/empty?layout_page_index=2"),
+        "/empty": empty,
+    }
+    assert [tile.sku for tile in catalog._paginate_tiles("/initial", 100)] == ["1"]
+    assert session.fetched == ["/initial", "/empty?layout_page_index=2", "/empty?layout_page_index=2"]
+
+
+def test_an_initial_empty_shell_can_infer_its_first_items_page(session: FakeSession) -> None:
+    shell = _tiles()
+    shell["pageInfo"] = {"url": "/items?layout_page_index=1"}
+    session.pages = {
+        "/initial": shell,
+        "/items?layout_page_index=2": _tiles("1"),
+    }
+    assert [tile.sku for tile in catalog._paginate_tiles("/initial", 100)] == ["1"]
+    assert session.fetched == ["/initial", "/items?layout_page_index=2"]
+
+
+def test_an_empty_page_can_still_offer_an_explicit_continuation(session: FakeSession) -> None:
+    empty = _tiles(paginator="/fresh")
+    empty["pageInfo"] = {"url": "/empty?layout_page_index=2"}
+    session.pages = {
+        "/initial": _tiles("1", paginator="/empty?layout_page_index=2"),
+        "/empty": empty,
+        "/fresh": _tiles("2"),
+    }
+    assert [tile.sku for tile in catalog._paginate_tiles("/initial", 100)] == ["1", "2"]
+    assert session.fetched == ["/initial", "/empty?layout_page_index=2", "/empty?layout_page_index=2", "/fresh"]
+
+
 def test_a_delivery_estimate_names_what_it_is_relative_to(session: FakeSession) -> None:
     session.pages = {
         "webDelivery": {

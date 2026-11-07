@@ -1,46 +1,67 @@
-"""Dependency-injection factories (no bare module-level singletons)."""
+"""Dependency-injection factories and the browser's owning worker thread."""
 
 import asyncio
-import atexit
-import contextlib
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from functools import cache
 
 from ozon_mcp.session.transport import OzonSession
 
+_factory_lock = threading.RLock()
+_session: OzonSession | None = None
+_executor: ThreadPoolExecutor | None = None
 
-@cache
+
 def get_session() -> OzonSession:
-    """The process-wide OZON session; disposed via ``get_session.cache_clear()``.
-
-    Closing it at process exit is not housekeeping: Chromium owns the profile
-    and only writes its cookie jar out when it shuts down, so a process that
-    just dies loses every token rotated during the run — and, once, a login
-    that had already succeeded.
-    """
-    session = OzonSession()
-
-    def flush() -> None:
-        # Interpreter shutdown is a hostile place to raise from.
-        with contextlib.suppress(Exception):
-            session.close()
-
-    atexit.register(flush)
-    return session
+    """The process-wide session; closed by shutdown_session before interpreter exit."""
+    global _session  # ruff: ignore[global-statement]
+    with _factory_lock:
+        if _session is None:
+            _session = OzonSession()
+        return _session
 
 
-@cache
 def get_executor() -> ThreadPoolExecutor:
-    """The one thread every session operation runs on.
+    """The single thread every session operation runs on.
 
-    Two constraints force a single dedicated thread: Playwright's sync API
-    refuses to run inside a live asyncio loop (which is where the MCP server
-    dispatches tools), and its objects may only be touched from the thread that
-    created them — so a pool of interchangeable workers would break browser
-    reuse. One worker also serialises access, matching the session's own lock.
+    Playwright's sync API cannot run in an asyncio loop, and browser objects
+    must be closed on the thread that created them. Serialize first-use too:
+    functools.cache alone can construct competing workers on concurrent misses.
     """
-    return ThreadPoolExecutor(max_workers=1, thread_name_prefix="ozon-session")
+    global _executor  # ruff: ignore[global-statement]
+    with _factory_lock:
+        if _executor is None:
+            _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ozon-session")
+        return _executor
+
+
+def shutdown_session() -> None:
+    """Drain work and close Chromium on its owning thread after the server stops.
+
+    A normal atexit callback runs after ThreadPoolExecutor's interpreter-exit
+    hook and on the main thread, so it cannot safely flush a Playwright profile.
+    Embedders must call this after stopping requests, as the CLI does.
+    """
+    global _session, _executor  # ruff: ignore[global-statement]
+    with _factory_lock:
+        executor = _executor
+    try:
+        if executor is not None:
+            executor.submit(_close_session).result()
+        else:
+            _close_session()
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
+        with _factory_lock:
+            _session = _executor = None
+
+
+def _close_session() -> None:
+    with _factory_lock:
+        session = _session
+    if session is not None:
+        session.close()
 
 
 async def run_blocking[T](work: Callable[[], T]) -> T:

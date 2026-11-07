@@ -80,7 +80,8 @@ def parse_totals(state: Any) -> Totals:
     return Totals(
         rows=rows,
         total=today,
-        # With nothing deferred the two coincide, and Ozon prints only one.
-        order_total=order_total or today,
+        # Today's charge alone does not establish the full cost. In particular,
+        # zero today can be a deferred order whose cost failed to parse.
+        order_total=order_total,
         note=note or None,
     )

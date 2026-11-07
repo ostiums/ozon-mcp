@@ -33,7 +33,8 @@ Buying, in order — each step is a precondition for the next:
   4. get_checkout() — read it before deciding anything: it lists the payment methods, the
      pickup points, the pay-on-delivery switch and the money
   5. configure_checkout(...) with values taken from that answer
-  6. show the user totals.order_total, then place_order(confirm_total=<that figure>)
+  6. show the user totals.order_total and selected_items, then
+     place_order(confirm_total=<full order total>, confirm_items=<selected_items>)
   7. if payment is still pending: pay_order(order_number)
 Undo: cancel_order(order_number), optionally skus=[...] for single lines.
 
@@ -107,16 +108,12 @@ identifiers back exactly as received."""
 
 
 def _transport_security() -> TransportSecuritySettings:
-    """Whether to check the Host header, and against what.
-
-    The check is an exact match, so it can only be enabled by naming the hosts:
-    with none named it stays off, or every client using the address it was given
-    would be answered 421 by a server that is working correctly.
-    """
-    allowed = get_settings().allowed_hosts
+    """Always check Host and any supplied Origin against explicit allowlists."""
+    settings = get_settings()
     return TransportSecuritySettings(
-        enable_dns_rebinding_protection=bool(allowed),
-        allowed_hosts=allowed,
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=settings.allowed_hosts,
+        allowed_origins=settings.allowed_origins,
     )
 
 

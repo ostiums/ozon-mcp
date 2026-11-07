@@ -119,7 +119,7 @@ login — makes the others wait.
 | `get_points` | Points by type, burning points, per-store seller bonuses |
 
 Changing the account is off by default. `OZON_ENABLE_WRITES=1` allows the cart,
-favorites, lists and cancellations; `OZON_ENABLE_ORDERS=1` allows `place_order`
+favorites, lists, checkout configuration and cancellations; `OZON_ENABLE_ORDERS=1` allows `place_order`
 and is separate because it spends money. `session_status` reports both, so a
 caller can plan around them instead of finding out halfway through.
 
@@ -138,6 +138,15 @@ which keeps the options already chosen.
 **Two money figures, never interchangeable.** `totals.total` is what Ozon charges
 today; `totals.order_total` is what the order costs. On a pay-on-delivery order
 today's charge is 0 ₽, so `order_total` is the figure to quote to a person.
+
+Before placing an order, show the user `totals.order_total` and `selected_items`
+(SKU to quantity). Pass both back as `place_order(confirm_total=..., confirm_items=...)`.
+The server compares them against a fresh checkout and rejects a changed amount or
+selection. A zero charge today cannot confirm a deferred order's full cost.
+
+If an order submission times out or returns an unrecognised response, check the
+orders list before trying again. A lost response does not prove that the order
+failed. Other POST mutations also require reading back account state before retrying.
 
 **An order row has no total.** Ozon prints none on the order list, so a row
 carries `amount_due_at_pickup` («К оплате при получении») and, per item, that
@@ -226,18 +235,20 @@ different answers.
 | `OZON_PROFILE_BACKUP` | `/data/profile.backup` | Copy of a known-good profile, restored on a sign-out |
 | `OZON_STATE_PATH` | `/data/state.json` | Legacy cookie snapshot, imported once to seed a new profile |
 | `OZON_IMPERSONATE` | `chrome124` | curl_cffi TLS-impersonation profile |
-| `OZON_ENABLE_WRITES` | `0` | Allow cart / favorites / list / cancellation changes |
+| `OZON_ENABLE_WRITES` | `0` | Allow cart / favorites / list / checkout / cancellation changes |
 | `OZON_ENABLE_ORDERS` | `0` | Allow `place_order` — spends money |
 | `OZON_MONITOR_STORE` | `/data/price_history.json` | Favorites price-history file |
 | `OZON_REQUEST_TIMEOUT` | `30` | Seconds for one HTTP call |
-| `OZON_REQUEST_ATTEMPTS` | `3` | Attempts before a call is reported as failed |
+| `OZON_REQUEST_ATTEMPTS` | `3` | Attempts for GET/HEAD reads; POST requests are attempted once |
 | `OZON_RETRY_BACKOFF_SECONDS` | `1` | Base wait between attempts, doubled and jittered |
 | `OZON_RETRY_CAP_SECONDS` | `20` | Longest wait, including a `Retry-After` Ozon asks for |
 | `OZON_BROWSER_TIMEOUT` | `60` | Seconds for a browser navigation or a login step |
 | `OZON_IDLE_SECONDS` | `600` | Close the idle browser; the HTTP session stays |
 | `OZON_TRANSPORT` | `stdio` | `stdio` (client spawns the process), `http` (streamable HTTP at `/mcp`) or `sse` (deprecated, `/sse`) |
-| `OZON_HOST` / `OZON_PORT` | `0.0.0.0` / `8084` | Bind for the HTTP transports; the same port serves `/metrics` |
-| `OZON_ALLOWED_HOSTS` | `[]` | `Host` headers the HTTP transports (`http` and `sse`) accept; empty means any. Naming hosts turns on MCP's exact-match check |
+| `OZON_HOST` / `OZON_PORT` | `127.0.0.1` / `8084` | Bind for the HTTP transports; the same port serves `/metrics` |
+| `OZON_AUTH_TOKEN` | unset | Required for HTTP/SSE: at least 32 printable non-space characters; send as `Authorization: Bearer <token>` |
+| `OZON_ALLOWED_HOSTS` | `["127.0.0.1:*","localhost:*","[::1]:*"]` | Nonempty Host allowlist; `host:*` allows any port on that host; wildcard hosts are rejected |
+| `OZON_ALLOWED_ORIGINS` | `["http://127.0.0.1:*","http://localhost:*","http://[::1]:*"]` | Allowed browser origins; checked when Origin is present; `[]` denies all Origin-bearing requests |
 
 See `env.example`.
 
@@ -250,8 +261,11 @@ docker build -t ozon-mcp .
 docker run -i --rm --shm-size=1g -v /opt/ozon-mcp:/data ozon-mcp
 
 # http: long-lived service on :8084 (/mcp + /metrics)
+# Generate once, store securely, and configure the same token in your MCP client.
+export OZON_AUTH_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 docker run -d --name ozon-mcp --shm-size=1g -v /opt/ozon-mcp:/data \
-  -e OZON_TRANSPORT=http -p 8084:8084 ozon-mcp
+  -e OZON_TRANSPORT=http -e OZON_HOST=0.0.0.0 -e OZON_AUTH_TOKEN \
+  -p 127.0.0.1:8084:8084 ozon-mcp
 ```
 
 `/data` has to be a bind mount. It holds the profile, and Ozon rotates the
@@ -262,6 +276,10 @@ on every container recreation.
 > **The profile is a credential.** It grants full access to the account —
 > orders, addresses, card balance, checkout. Never commit it; back it up
 > encrypted.
+
+The server restricts profile and backup directories to `0700` and regular files
+to `0600` before browser startup and after closing it. Existing legacy cookie
+snapshots receive `0600` too. Keep the mounted data directory private.
 
 Locally, with [uv](https://docs.astral.sh/uv/):
 
@@ -274,6 +292,13 @@ uv run python -m ozon_mcp   # needs a display or Xvfb
 Under `http` and `sse` the same port serves Prometheus metrics at `/metrics`: upstream
 request outcomes and latency, antibot re-challenges, session bootstraps, browser
 state.
+
+HTTP/SSE require `Authorization: Bearer <OZON_AUTH_TOKEN>` on every request,
+including `/metrics` and SSE message POSTs. `stdio` requires no HTTP token.
+For remote access, use HTTPS, set `OZON_ALLOWED_HOSTS` to the public hostname
+(for example `["mcp.example.com"]`), and add the client's browser origin to
+`OZON_ALLOWED_ORIGINS` if it sends one. Keep the upstream port private behind
+the TLS proxy. Missing tokens or an empty Host allowlist prevent HTTP/SSE startup.
 
 ## Session lifetime
 
@@ -295,11 +320,11 @@ Calls are serialised: a second agent waits out the first, including a
 
 More importantly, **the account state is shared**. Cart ticks live on Ozon's
 side, not in the MCP session, so two agents composing orders at once overwrite
-each other's selection — and `place_order` buys whatever is ticked at that
-moment, at a total the caller read a second earlier. Reads are safe for any
-number of agents; writes are not. Keep one writer per account.
+each other's selection. `place_order` checks the confirmed full total and
+SKU quantities against the fresh checkout before submission, but Ozon can still
+change account state outside this server. Keep one writer per account.
 
-The endpoint has no authentication: whoever reaches the port has the account.
+Every client with the HTTP bearer token shares access to the same account.
 
 ## Limitations
 

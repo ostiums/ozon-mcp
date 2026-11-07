@@ -44,3 +44,23 @@ def test_a_comment_is_required_by_the_catch_all_reason(session: FakeSession, wri
     with pytest.raises(OzonError) as raised:
         orders.cancel_order("44563249-0877", reason_id="508")
     assert "comment" in str(raised.value).lower()
+
+
+def test_an_empty_explicit_sku_list_cannot_cancel_the_whole_order(session: FakeSession, writes_on: None) -> None:
+    session.actions = {"selectCancelModalRms": {"action": {"link": "/modal/selectCancelReasonRms?order=0877"}}}
+    session.pages = {
+        "/modal/selectCancelReasonRms": page(selectCancelReason={"state": dumps({"Parameters": {"OrderId": 877}})})
+    }
+    with pytest.raises(OzonError, match="sku"):
+        orders.cancel_order("44563249-0877", skus=[])
+    assert session.performed == []
+
+
+def test_direct_reasons_cannot_discard_a_partial_cancellation(session: FakeSession, writes_on: None) -> None:
+    session.actions = {"selectCancelModalRms": {"action": {"link": "/modal/selectCancelReasonRms?order=0877"}}}
+    session.pages = {
+        "/modal/selectCancelReasonRms": page(selectCancelReason={"state": dumps({"Parameters": {"OrderId": 877}})})
+    }
+    with pytest.raises(OzonError, match="partial"):
+        orders.cancel_order("44563249-0877", skus=["123456789"])
+    assert session.posted == []

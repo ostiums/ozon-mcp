@@ -87,3 +87,43 @@ def test_a_refused_creation_raises_rather_than_returning_a_ghost(session: FakeSe
     with pytest.raises(OzonError) as raised:
         selections.create_selection("", "3077454533")
     assert "Пустое название вишлиста" in str(raised.value)
+
+
+def test_a_rename_refuses_to_guess_unreadable_visibility(session: FakeSession, writes_on: None) -> None:
+    session.pages = {"/selections/form": page(), "/selections/list": LIST_PAGE}
+    with pytest.raises(OzonError, match="visibility"):
+        selections.edit_selection(UUID, "Новое имя")
+    assert session.performed == []
+
+
+def test_a_visibility_toggle_refuses_an_unknown_current_state(session: FakeSession, writes_on: None) -> None:
+    session.pages = {"/selections/form": page(), "/selections/list": LIST_PAGE}
+    with pytest.raises(OzonError, match="visibility"):
+        selections.set_selection_public(UUID, public=False)
+    assert session.performed == []
+
+
+def test_a_rename_does_not_clear_a_description_that_was_not_read(session: FakeSession, writes_on: None) -> None:
+    form = page(
+        webSelectionItemForm={"form": {"anonymousCell": {"rightBlock": {"control": {"toggle": {"isSelected": False}}}}}}
+    )
+    session.pages = {"/selections/form": form, "/selections/list": LIST_PAGE}
+    with pytest.raises(OzonError, match="description"):
+        selections.edit_selection(UUID, "Новое имя")
+    assert session.performed == []
+
+
+@pytest.mark.parametrize("toggle", [{}, {"isSelected": "false"}])
+def test_missing_or_nonboolean_visibility_stays_unknown(
+    session: FakeSession, writes_on: None, toggle: dict[str, object]
+) -> None:
+    session.pages = {
+        "/selections/form": page(
+            webSelectionItemForm={"form": {"anonymousCell": {"rightBlock": {"control": {"toggle": toggle}}}}}
+        ),
+        "/selections/list": LIST_PAGE,
+    }
+    assert selections.get_selection(UUID).public is None
+    with pytest.raises(OzonError, match="visibility"):
+        selections.set_selection_public(UUID, public=True)
+    assert session.performed == []

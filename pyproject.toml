@@ -7,7 +7,7 @@ license = { text = "MIT" }
 authors = [{ name = "Alexander Zhukov" }]
 requires-python = ">=3.13"
 dependencies = [
-    "mcp>=1.2,<2",
+    "mcp>=1.30.0,<2",
     "orjson>=3.10",
     "playwright>=1.40",
     "curl-cffi>=0.7",
@@ -31,6 +31,8 @@ packages = ["src/ozon_mcp"]
 dev = ["ruff>=0.6", "ty>=0.0.1a1", "pytest>=8", "pytest-asyncio>=0.23", "pytest-cov>=5"]
 
 [tool.uv]
+# Keep transitive TLS and JWT dependencies on security-patched releases.
+constraint-dependencies = ["certifi>=2026.10.19", "pyjwt>=2.15.0"]
 # ty (Astral's type checker) only ships pre-release builds for now.
 prerelease = "allow"
 
@@ -116,9 +118,6 @@ ignore = [
 "src/ozon_mcp/services/checkout.py" = ["boolean-type-hint-positional-argument"]
 # Same reason: cancel_order mirrors the tool signature.
 "src/ozon_mcp/services/orders.py" = ["boolean-type-hint-positional-argument", "boolean-default-value-positional-argument"]
-# Binding all interfaces is the point: the container's port mapping decides what
-# is actually reachable.
-"src/ozon_mcp/settings.py" = ["hardcoded-bind-all-interfaces"]
 # blind-except: any upstream failure is retried the same way, so the exception
 # type carries no decision. no-self-use: _sleep_before_retry is the seam the
 # transport tests replace, so it stays an instance method.

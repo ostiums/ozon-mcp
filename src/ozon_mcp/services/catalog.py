@@ -2,8 +2,9 @@
 
 import base64
 import re
+from collections import deque
 from typing import Final
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from ozon_mcp.constants import (
     PURCHASE_SORTS,
@@ -30,6 +31,7 @@ from ozon_mcp.models.orders import OrderProduct
 from ozon_mcp.parsing import catalog as parse
 from ozon_mcp.parsing.common import declared_counter, next_pages
 from ozon_mcp.parsing.orders import ORDER_NUMBER_RE, order_numbers_from_link, parse_order_products
+from ozon_mcp.utils.money import to_kopecks
 from ozon_mcp.utils.serde import dumps
 
 _MAX_TILE_PAGES: Final = 200
@@ -63,23 +65,29 @@ def _sku(sku_or_url: str) -> str:
     return str(match.group(1)) if match else sku_or_url
 
 
-def _price_number(price: str | None) -> int | None:
-    digits = re.sub(r"\D", "", price or "")
-    return int(digits) if digits else None
-
-
 def _payable(tile: Tile) -> int | None:
-    """What this lot actually costs, in kopeck-free roubles.
+    """What this lot actually costs, in kopecks.
 
     Ozon prints two live prices — one with its own bank cards, one with any
     other — and the first is what the account pays. Comparing on the other one
     calls a lot cheaper than a lot that is not.
     """
-    return _price_number(tile.price)
+    return to_kopecks(tile.price)
+
+
+def _price_key(tile: Tile, *, descending: bool = False) -> tuple[bool, int]:
+    """Known prices first, including zero, in either price direction."""
+    price = _payable(tile)
+    return price is None, -(price or 0) if descending else price or 0
 
 
 def _query_string(filters: dict[str, str] | None) -> str:
-    return "".join(f"&{k}={v}" for k, v in (filters or {}).items() if v not in {None, ""})
+    # Use %20 for spaces: the transport preserves percent escapes, but would
+    # escape form-encoded + signs again and turn them into literal plus signs.
+    encoded = urlencode(
+        {key: value for key, value in (filters or {}).items() if value not in {None, ""}}, quote_via=quote
+    )
+    return f"&{encoded}" if encoded else ""
 
 
 def search(
@@ -136,7 +144,7 @@ def search(
         if len(tiles) >= limit:
             break
     if sort in {"cheap", "expensive"}:
-        tiles.sort(key=lambda tile: _payable(tile) or (1 << 30), reverse=sort == "expensive")
+        tiles.sort(key=lambda tile: _price_key(tile, descending=sort == "expensive"))
     return tiles[:limit]
 
 
@@ -287,7 +295,7 @@ def find_cheaper(sku_or_url: str, limit: int = 10) -> Cheaper:
     tell from good news, so it raises instead.
     """
     product = product_details(sku_or_url)
-    base_price = _price_number(product.price)
+    base_price = to_kopecks(product.price)
     if base_price is None:
         msg = (
             f"could not read the price of {product.sku or sku_or_url}, so nothing can be called cheaper than it — "
@@ -310,7 +318,7 @@ def find_cheaper(sku_or_url: str, limit: int = 10) -> Cheaper:
             continue
         seen.add(tile.sku)
         cheaper.append(tile)
-    cheaper.sort(key=lambda tile: _payable(tile) or (1 << 30))
+    cheaper.sort(key=_price_key)
     return Cheaper(
         base={"title": product.title, "price": product.price, "sku": product.sku},
         cheaper=cheaper[:limit],
@@ -339,7 +347,14 @@ def order_products(order: str) -> list[OrderProduct]:
     return products
 
 
-def _paginate_tiles(path: str, limit: int, backend: str = "composer", counter: str | None = None) -> list[Tile]:
+def _paginate_tiles(
+    path: str,
+    limit: int,
+    backend: str = "composer",
+    counter: str | None = None,
+    *,
+    require_complete: bool = False,
+) -> list[Tile]:
     """Walk a scroll-paginated tile list.
 
     A page that comes back empty is retried once before the walk ends: an
@@ -350,32 +365,41 @@ def _paginate_tiles(path: str, limit: int, backend: str = "composer", counter: s
     session = get_session()
     tiles: list[Tile] = []
     seen: set[str] = set()
+    visited = {path}
+    pending: deque[str] = deque()
     data = session.fetch(path, backend=backend)
+    infer_from_page_info = True
     # A page offers a paginator per block, and one of them is always
     # "you might also like" — followed by mistake, it fills the answer with
     # products that are not on the list at all.
     ceiling = declared_counter(data, counter) if counter else None
-    target = min(limit, ceiling) if ceiling else limit
+    target = min(limit, ceiling) if ceiling is not None else limit
     for _ in range(_MAX_TILE_PAGES):
-        for tile in parse.parse_tiles(data):
+        page_tiles = parse.parse_tiles(data)
+        for tile in page_tiles:
             if tile.sku and tile.sku not in seen:
                 seen.add(tile.sku)
                 tiles.append(tile)
         if len(tiles) >= target:
             break
-        advanced = False
-        for following in next_pages(data):
-            page = session.fetch(following, backend="entrypoint")
-            if parse.parse_tiles(page):
-                data, advanced = page, True
-                break
-            # An upstream hiccup reads the same as the end of the list.
-            page = session.fetch(following, backend="entrypoint")
-            if parse.parse_tiles(page):
-                data, advanced = page, True
-                break
-        if not advanced:
+        # An empty page was already retried. Its pageInfo only describes the
+        # request, so advancing that index would walk empty pages to the cap.
+        # Explicit links and pending alternatives can still continue the list.
+        for following in next_pages(data, infer_from_page_info=infer_from_page_info):
+            if following not in visited:
+                visited.add(following)
+                pending.append(following)
+        if not pending:
             break
+        following = pending.popleft()
+        data = session.fetch(following, backend="entrypoint")
+        if not parse.parse_tiles(data):
+            # An upstream hiccup reads the same as the end of the list.
+            data = session.fetch(following, backend="entrypoint")
+        infer_from_page_info = bool(parse.parse_tiles(data))
+    if require_complete and ceiling is not None and len(tiles) < target:
+        msg = f"incomplete product list at {path}: read {len(tiles)} of {target}"
+        raise OzonError(msg)
     return tiles[:target]
 
 

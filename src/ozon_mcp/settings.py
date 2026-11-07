@@ -6,6 +6,7 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,25 +64,43 @@ class OzonSettings(BaseSettings):
     event-stream transport at /sse; it still works and the spec has deprecated
     it, so prefer ``http`` for anything new."""
 
-    # Binds inside the container; what is actually reachable is set by the port mapping.
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     """Bind address used by the http and sse transports."""
 
     port: int = 8084
     """Port serving both the MCP endpoint (/mcp or /sse) and /metrics."""
 
-    allowed_hosts: list[str] = []
-    """``Host`` headers the HTTP transports accept, empty meaning any.
+    auth_token: SecretStr | None = None
+    """Bearer token required for HTTP/SSE, including /metrics. Use at least 32
+    printable ASCII characters without spaces, generated at random."""
 
-    MCP can refuse a request whose Host it does not recognise — protection
-    against DNS rebinding — and the check is an exact match, so a server reached
-    at anything other than a listed name answers 421 "Invalid Host header".
-    Left empty the check stays off, which is the useful default here: the
-    transport has no authentication of its own, so the boundary is who can reach
-    the port, and a server told to bind 0.0.0.0 is meant to be reached from
-    elsewhere. List the names in use ("mcp.example:*" matches any port) when the
-    port is exposed more widely.
-    """
+    allowed_hosts: list[str] = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    """Accepted Host headers. Required for HTTP/SSE; DNS rebinding protection
+    is always enabled. An explicit hostname with :* accepts any port."""
+
+    allowed_origins: list[str] = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    """Accepted browser Origin headers. Requests without Origin are accepted;
+    an empty list rejects every request that supplies an Origin."""
+
+    def validate_http_security(self) -> None:
+        """Fail before opening a network listener with missing security settings."""
+        token = self.auth_token.get_secret_value() if self.auth_token is not None else ""
+        if len(token) < 32 or any(not 33 <= ord(char) <= 126 for char in token):
+            raise ValueError(
+                "HTTP/SSE requires OZON_AUTH_TOKEN with at least 32 printable ASCII characters without spaces"
+            )
+        if not self.allowed_hosts or any(
+            not host or "*" in host.removesuffix(":*") or any(char.isspace() for char in host)
+            for host in self.allowed_hosts
+        ):
+            raise ValueError("HTTP/SSE requires a nonempty OZON_ALLOWED_HOSTS list of explicit hosts")
+        if any(
+            not origin.startswith(("http://", "https://"))
+            or "*" in origin.removesuffix(":*")
+            or any(char.isspace() for char in origin)
+            for origin in self.allowed_origins
+        ):
+            raise ValueError("OZON_ALLOWED_ORIGINS must contain explicit HTTP(S) origins")
 
 
 @cache

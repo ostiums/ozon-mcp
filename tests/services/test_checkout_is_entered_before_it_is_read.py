@@ -55,7 +55,9 @@ def _entries(session: FakeSession) -> list[str]:
 
 def test_a_read_enters_checkout_first(session: FakeSession) -> None:
     session.pages = {"/cart": _cart(checked=True), "/gocheckout": CHECKOUT_PAGE}
-    assert checkout.get_checkout().totals.order_total == "649 ₽"
+    state = checkout.get_checkout()
+    assert state.totals.order_total == "649 ₽"
+    assert state.selected_items == {"2859492815": 1}
     entries = _entries(session)
     assert len(entries) == 1
     # The parameters are the ones the cart's own button carries; session_uid is
@@ -67,7 +69,7 @@ def test_a_read_enters_checkout_first(session: FakeSession) -> None:
 def test_placing_an_order_enters_checkout_too(session: FakeSession, writes_on: None) -> None:
     session.pages = {"/cart": _cart(checked=True), "/gocheckout": CHECKOUT_PAGE}
     session.actions = {"createOrderV2": {"data": {"createOrderResponse": {"link": "?orderNumber=44563249-0902"}}}}
-    assert checkout.place_order("649 ₽").order_number == "44563249-0902"
+    assert checkout.place_order("649 ₽", {"2859492815": 1}).order_number == "44563249-0902"
     assert _entries(session), "an order was placed against a snapshot nobody refreshed"
 
 
@@ -83,5 +85,5 @@ def test_a_total_from_a_stale_snapshot_is_still_refused(session: FakeSession, wr
     """The confirmation stays the last line of defence, entry or not."""
     session.pages = {"/cart": _cart(checked=True), "/gocheckout": CHECKOUT_PAGE}
     with pytest.raises(TotalMismatchError):
-        checkout.place_order("768 ₽")
+        checkout.place_order("768 ₽", {"2859492815": 1})
     assert session.performed == []
