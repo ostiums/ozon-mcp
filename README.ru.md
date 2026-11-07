@@ -262,6 +262,7 @@ Ozon.
 | `OZON_RETRY_CAP_SECONDS` | `20` | Максимум ожидания, включая `Retry-After` от Ozon |
 | `OZON_BROWSER_TIMEOUT` | `60` | Секунд на навигацию браузера или шаг логина |
 | `OZON_PUBLIC_READ_TIMEOUT` | `20` | Общие секунды на одно публичное чтение: навигация, готовность плитки и снимок. Должно быть короче срока клиента MCP |
+| `OZON_PUBLIC_DIAGNOSTICS` | выкл. | `1` добавляет `owned_search` в `session_status()`. Зонд не запускает браузер и не переходит по URL. Аргументы `session_status()` не меняются |
 | `OZON_SHUTDOWN_TIMEOUT` | `5` | Секунд ожидания закрытия сессии. Таймаут не удаляет замки профиля |
 | `OZON_IDLE_SECONDS` | `600` | Закрыть простаивающий браузер; HTTP-сессия остаётся |
 | `OZON_TRANSPORT` | `stdio` | `stdio` (клиент сам поднимает процесс), `http` (streamable HTTP на `/mcp`) или `sse` (устаревший, `/sse`) |

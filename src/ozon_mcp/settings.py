@@ -75,6 +75,13 @@ class OzonSettings(BaseSettings):
     browser_timeout: float = 60.0
     """Seconds to wait for a browser navigation or a login step."""
 
+    public_diagnostics: bool = False
+    """When true, ``session_status`` includes the current owned-page probe.
+
+    The probe does not launch a browser, navigate, or adopt another tab.
+    Off unless set. Search is unchanged.
+    """
+
     public_read_timeout: float = Field(default=20.0, gt=0)
     """Shared seconds for one public page: navigation, tile readiness, and the snapshot.
 

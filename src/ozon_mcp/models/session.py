@@ -1,6 +1,11 @@
 """Session and login DTOs."""
 
+from collections.abc import Callable
+
+from pydantic import model_serializer
+
 from ozon_mcp.models.base import OzonModel
+from ozon_mcp.models.catalog import OwnedSearchProbe
 from ozon_mcp.models.enums import LoginStage
 
 
@@ -26,6 +31,15 @@ class SessionStatus(OzonModel):
     writes_enabled: bool = False
     orders_enabled: bool = False
     detail: str | None = None
+    owned_search: OwnedSearchProbe | None = None
+    """Owned-page probe. Present only when ``OZON_PUBLIC_DIAGNOSTICS`` is set."""
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_probe(self, handler: Callable[[object], dict[str, object]]) -> dict[str, object]:
+        data = handler(self)
+        if data.get("owned_search") is None:
+            data.pop("owned_search")
+        return data
 
 
 class LoginStep(OzonModel):

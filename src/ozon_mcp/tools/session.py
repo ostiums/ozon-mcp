@@ -23,6 +23,10 @@ async def session_status() -> SessionStatus:
     no orders, no balances, no explanation. Recovery is start_login() +
     submit_login_code(), and backup_available=true means it will most likely
     recover by itself on the next call.
+    Call session_status() with no arguments. OZON_PUBLIC_DIAGNOSTICS=1 adds
+    owned_search, a no-navigation read of the page this process already owns.
+    The field is absent unless that flag is set. It does not launch, navigate,
+    or read another tab.
     """
     return await run_blocking(session.session_status)
 
