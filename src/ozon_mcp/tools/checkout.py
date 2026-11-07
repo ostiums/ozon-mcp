@@ -128,7 +128,7 @@ async def place_order(
 
 @mcp.tool()
 async def pay_order(order: OrderRef) -> PaymentRequested:
-    """[GATED] Ask Ozon to charge an order left in «Ожидаем оплаты», and report
+    """[GATED by writes_enabled — SPENDS REAL MONEY] Ask Ozon to charge an order left in «Ожидаем оплаты», and report
     what the user must still do.
     The result spells it out: `amount_due` is the charge, `shortfall` is set when
     the Ozon Card balance does not cover it (top up by that much), and
