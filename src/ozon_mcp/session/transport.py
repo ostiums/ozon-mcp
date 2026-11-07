@@ -44,6 +44,7 @@ from ozon_mcp.constants import (
     WIDGET_URL,
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
+from ozon_mcp.parsing.public_storefront import PUBLIC_PAGE_READER
 from ozon_mcp.session.page_health import classify_page_title, health_message
 from ozon_mcp.session.phone_form import (
     has_separate_russian_prefix,
@@ -195,6 +196,22 @@ def _redirect_classes(location: str, request_url: str) -> str:
     else:
         path_class = "other-path"
     return f"host={host_class}; path={path_class}."
+
+
+def _public_catalog_path(path: str) -> str:
+    """Allow only a same-site search, category or product path."""
+    if not path.startswith("/") or path.startswith("//") or "\\" in path or any(ord(char) < 32 for char in path):
+        message = "public storefront reads only an on-site catalog path"
+        raise OzonError(message)
+    parsed = urlsplit(path)
+    if parsed.scheme or parsed.netloc:
+        message = "public storefront reads only an on-site catalog path"
+        raise OzonError(message)
+    route = parsed.path
+    if route == "/search" or route.startswith(("/search/", "/category/", "/product/")):
+        return path
+    message = "public storefront reads only /search, /category and /product"
+    raise OzonError(message)
 
 
 def _response_redirect_detail(response: Any, status: int, url: str) -> str:
@@ -686,6 +703,28 @@ class OzonSession:
             return self.is_authenticated(self.fetch("/my/orderlist"))
 
     # -- DOM reads (need the browser) ----------------------------------------
+    def read_public_page(self, path: str) -> dict[str, Any]:
+        """Open one public catalog path in the existing browser and read schema.org data.
+
+        Navigation uses the browser's own page load. Composer redirects are not
+        followed. An unhealthy title raises and does not fall back to the API.
+        """
+        checked = _public_catalog_path(path)
+        with self._lock:
+            if self._logging_in:
+                message = "login is in progress; finish it before reading the storefront"
+                raise OzonError(message)
+            self._ensure_browser()
+            self._page.goto(HOME_URL.rstrip("/") + checked, wait_until="domcontentloaded", timeout=self._browser_ms())
+            self._page.wait_for_timeout(6_000)
+            self._raise_for_antibot_challenge()
+            self._last_used = time.time()
+            data = self._page.evaluate(PUBLIC_PAGE_READER)
+        if not isinstance(data, dict):
+            message = "Public storefront page did not return a document. Nothing was read."
+            raise OzonError(message)
+        return data
+
     def page_extract(self, path: str, js: str, *, scroll: bool = False) -> Any:
         """Navigate to ``path`` and evaluate ``js`` against the rendered DOM.
 

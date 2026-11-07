@@ -42,10 +42,11 @@ async def search(
     wording and may name no model at all.
     A tile is not a card: for variants, characteristics, photos and stock call
     product_details() with its sku.
-    The storefront JSON call does not follow redirects. HTTP 3xx is
+    The default composer call does not follow redirects. HTTP 3xx is
     upstream_unavailable with a host and path class, not the destination.
-    A signed-in order list does not show that this search succeeded, and this
-    tool does not read the public page through the browser.
+    A signed-in order list does not show that this search succeeded.
+    `OZON_STOREFRONT=public` reads schema.org data from the existing browser
+    instead, and does not fall back to the composer API. It is off unless set.
     filters comes from get_search_filters() — {key: option_value} for a
     checkbox or category facet, {key: "min;max"} for a range, e.g.
     {"currency_price": "200;600"}. Narrowing by price is a filter, not a sort.

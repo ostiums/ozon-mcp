@@ -248,6 +248,7 @@ Ozon.
 | `OZON_PROFILE_BACKUP` | `/data/profile.backup` | Копия рабочего профиля, восстанавливается при разлогине |
 | `OZON_STATE_PATH` | `/data/state.json` | Старый снапшот куки, импортируется один раз для засева профиля |
 | `OZON_BROWSER_CHANNEL` | не задан | `chrome` выбирает установленный стабильный Chrome; иначе остаётся Chromium Playwright |
+| `OZON_STOREFRONT` | `composer` | `public` читает schema.org в уже открытом браузере для поиска и карточки. Это не запасной путь |
 | `OZON_PROXY_URL` | не задан | Явный прокси для браузера и HTTP-клиента. Пусто — прямое соединение, переменные окружения не используются |
 | `OZON_PROXY_REMOTE_DNS` | `0` | Вместе с `OZON_PROXY_URL` резолвит имена на прокси и исключает только хост прокси |
 | `OZON_IMPERSONATE` | `chrome124` | Профиль TLS-имперсонации curl_cffi |

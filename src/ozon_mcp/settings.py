@@ -30,6 +30,9 @@ class OzonSettings(BaseSettings):
     browser_channel: Literal["chrome"] | None = None
     """Optional installed stable Chrome channel. Unset keeps Playwright's Chromium."""
 
+    storefront: Literal["composer", "public"] = "composer"
+    """Search and product cards. ``public`` reads the open browser page and does not call the composer API."""
+
     proxy_url: SecretStr | None = None
     """Explicit proxy for the browser and the HTTP client. Unset means a direct connection."""
 

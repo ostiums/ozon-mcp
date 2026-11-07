@@ -247,6 +247,7 @@ different answers.
 | `OZON_PROFILE_BACKUP` | `/data/profile.backup` | Copy of a known-good profile, restored on a sign-out |
 | `OZON_STATE_PATH` | `/data/state.json` | Legacy cookie snapshot, imported once to seed a new profile |
 | `OZON_BROWSER_CHANNEL` | unset | `chrome` selects installed stable Chrome; unset keeps Playwright's Chromium |
+| `OZON_STOREFRONT` | `composer` | `public` reads schema.org data in the existing browser for search and product cards. It is not a fallback |
 | `OZON_PROXY_URL` | unset | Explicit proxy for the browser and HTTP client. Unset is direct; environment proxies are not used |
 | `OZON_PROXY_REMOTE_DNS` | `0` | With `OZON_PROXY_URL`, resolve names at the proxy and exclude only the proxy host |
 | `OZON_IMPERSONATE` | `chrome124` | curl_cffi TLS-impersonation profile |
