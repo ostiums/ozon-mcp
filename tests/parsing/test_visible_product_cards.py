@@ -86,19 +86,12 @@ def test_price_stays_inside_its_own_tile_and_is_not_a_bank_price() -> None:
 
 def test_hashed_price_class_is_not_enough() -> None:
     products = products_from_document({"html": HASH_ONLY})
-    assert products is not None
-    assert products[0].title == "Hash title"
-    assert products[0].displayed_price is None
-    assert products[0].price is None
+    assert products is None  # A tile requires an unambiguous displayed price.
 
 
-def test_ambiguous_tile_is_dropped_and_two_headlines_leave_price_unknown() -> None:
+def test_ambiguous_tile_and_two_headlines_fail_closed() -> None:
     products = products_from_document({"html": AMBIGUOUS})
-    assert products is not None
-    assert [product.sku for product in products] == ["1600000006"]
-    assert products[0].title == "Ok"
-    assert products[0].displayed_price is None
-    assert products[0].url.endswith("/ok-1600000006/")
+    assert products is None
 
 
 def test_deadline_stages_are_the_same_selector_narrowed() -> None:

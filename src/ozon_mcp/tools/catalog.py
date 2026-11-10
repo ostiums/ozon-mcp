@@ -41,7 +41,12 @@ async def search(
 ) -> list[Tile]:
     """Storefront search → product tiles (sku/title/price/url). Give a text
     query, a category slug ("produkty-dlya-doma-9200"), or both.
-    limit is depth, not page size: pages are walked until there are that many
+    In public mode, cheap/expensive navigate in site relevance order (no price
+    sorting parameter), then sort the returned tiles by displayed_price. This
+    reads one rendered page, capped by limit; it is not a site-wide cheapest
+    crawl. Only explicitly requested non-price sorts go in the navigation URL.
+    Facets and composer fallback are disabled in public mode.
+    In composer mode, limit is depth, not page size: pages are walked until there are that many
     results, so raise it when looking for the cheapest — a page holds a few
     dozen and the cheapest lot is often further down. sort="cheap" ranks on the
     payable price (Ozon's own order goes by a different figure).
@@ -52,11 +57,6 @@ async def search(
     wording and may name no model at all.
     A tile is not a card: for variants, characteristics, photos and stock call
     product_details() with its sku.
-    The default composer call does not follow redirects. HTTP 3xx is
-    upstream_unavailable with a host and path class, not the destination.
-    A signed-in order list does not show that this search succeeded.
-    `OZON_STOREFRONT=public` reads schema.org data from the existing browser
-    instead, and does not fall back to the composer API. It is off unless set.
     filters comes from get_search_filters() — {key: option_value} for a
     checkbox or category facet, {key: "min;max"} for a range, e.g.
     {"currency_price": "200;600"}. Narrowing by price is a filter, not a sort.
@@ -88,6 +88,11 @@ async def product_details(
     ] = False,
 ) -> ProductCard:
     """Product card: title, three prices, variants, characteristics, gallery photos.
+    Public mode reads the product page's observed widgets, including pack_weight
+    and nutrition with its declared basis, plus a unique visible seller.
+    protein_per_100g prefers an explicit declaration; otherwise it is calculated
+    only from explicit serving grams and protein, with the basis in the string.
+    Missing or conflicting data stays null; pack weight/count is never a serving size.
     Money as Ozon prints it: `price` is «С банками» — what the account actually
     pays and the figure to compare lots on — `price_regular` is «С другими
     банками», `price_old` the struck-through comparison. `available` says whether

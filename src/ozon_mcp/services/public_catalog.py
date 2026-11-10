@@ -5,7 +5,8 @@ from urllib.parse import quote
 from ozon_mcp.constants import SEARCH_SORTS
 from ozon_mcp.dependencies import get_session
 from ozon_mcp.errors import OzonError
-from ozon_mcp.models.catalog import OwnedSearchProbe, ProductCard, Tile
+from ozon_mcp.models.catalog import DeliveryEstimate, OwnedSearchProbe, ProductCard, Tile
+from ozon_mcp.parsing.public_delivery import delivery_from_document
 from ozon_mcp.parsing.public_storefront import (
     PublicProduct,
     format_public_diagnostics,
@@ -64,6 +65,11 @@ def product_public(sku: str) -> ProductCard:
     return ProductCard(
         title=product.title,
         sku=product.sku,
+        url=product.url,
+        pack_weight=product.pack_weight,
+        nutrition=product.nutrition,
+        protein_per_100g=product.protein_per_100g,
+        seller=product.seller,
         price=product.price,
         price_regular=product.price_regular,
         price_old=product.price_old,
@@ -84,8 +90,7 @@ def _declared_products(path: str) -> list[PublicProduct]:
         message = (
             "Public storefront page has no declared product list. Nothing was read. "
             "This is not an empty search result. No schema.org product and no visible "
-            "link to /product/<sku>/ were found. "
-            + format_public_diagnostics(document.get("diagnostics"))
+            "link to /product/<sku>/ were found. " + format_public_diagnostics(document.get("diagnostics"))
         )
         raise OzonError(message)
     return products
@@ -141,7 +146,11 @@ def owned_search_probe() -> OwnedSearchProbe:
 
 
 def _search_path(query: str | None, category: str | None, sort: str, page: int) -> str:
+    # Price ordering applies only to tiles read from one relevance-ordered page.
+    # Raw price aliases are suppressed too; no speculative relevance flags.
     value = SEARCH_SORTS.get(sort, sort)
+    if value in {"price", "price_desc"}:
+        value = ""
     base = f"/category/{category.strip('/')}/" if category else "/search/"
     path = f"{base}?page={page}"
     if query:
@@ -164,5 +173,14 @@ def _tile(product: PublicProduct) -> Tile:
 
 
 def _sort_key(tile: Tile, *, descending: bool) -> tuple[bool, int]:
-    price = to_kopecks(tile.price)
+    price = to_kopecks(tile.displayed_price or tile.price)
     return price is None, -(price or 0) if descending else price or 0
+
+
+def delivery_public(sku: str) -> DeliveryEstimate:
+    """Read only an explicit public delivery declaration for the requested SKU."""
+    document = get_session().read_public_page(f"/product/{sku}/")
+    products = products_from_document(document)
+    if not products or len(products) != 1 or products[0].sku != sku:
+        raise OzonError("Public delivery page did not declare the requested SKU.")
+    return DeliveryEstimate(sku=sku, delivery=delivery_from_document(document))

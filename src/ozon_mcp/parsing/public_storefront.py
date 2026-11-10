@@ -1,9 +1,9 @@
 """Read a public Ozon page from schema.org data the page already rendered.
 
-Only JSON-LD and schema.org microdata are accepted. A price is kept only when
+Schema.org and inspected public DOM widgets are accepted. A price is kept only when
 it belongs to the same product. Missing title, price, variants or nutrition
 stay missing. This parser does not call an API and does not invent fields.
-Live pages were not read while writing it.
+DOM fixtures were inspected on 2026-11-10.
 """
 
 from __future__ import annotations
@@ -17,15 +17,21 @@ from urllib.parse import parse_qsl, urlsplit
 
 from ozon_mcp.models.catalog import Characteristic, Variant, VariantOption
 
-_PRODUCT_URL: Final = re.compile(r"/product/(?:[^/]*-)?(\d{6,})/?$")
+_PRODUCT_URL: Final = re.compile(r"/product/(?:[a-z0-9-]*-)?(\d{6,})/?$")
 _ORIGIN = "https://www.ozon.ru"
 _SNAPSHOT_RESERVE_MS: Final = 3_000
 _QUERY_KEY: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,40}$")
-_URL_CLASSES: Final = frozenset(
-    {"about:blank", "ozon-search", "ozon-product", "ozon-home", "ozon-other", "external", "missing"}
-)
+_URL_CLASSES: Final = frozenset({
+    "about:blank",
+    "ozon-search",
+    "ozon-product",
+    "ozon-home",
+    "ozon-other",
+    "external",
+    "missing",
+})
 
-# The browser only copies schema.org nodes. It does not read cookies, storage,
+# The browser copies schema.org and inspected public DOM nodes. It does not read cookies, storage,
 # network traffic, or the user agent.
 PUBLIC_PAGE_READER = """() => {
   const jsonLd = [];
@@ -51,9 +57,29 @@ PUBLIC_PAGE_READER = """() => {
     if (prices.length === 1) props.price = prices[0];
     microdata.push({ type: scope.getAttribute("itemtype") || "", props, nested: false });
   }
-  const visible = document.body ? document.body.cloneNode(true) : document.createElement("div");
-  visible.querySelectorAll("script, style, noscript, template, iframe").forEach((node) => node.remove());
-  return { title: document.title || "", jsonLd, microdata, html: visible.innerHTML || "" };
+  const selectors = [
+    'div[data-widget="infiniteVirtualPaginator"]',
+    ...["webProductHeading", "webPrice", "webShortCharacteristics", "webCharacteristics",
+        "webNutritionInfo", "webDescription", "webCurrentSeller", "webDelivery"]
+      .map(name => 'div[data-widget="' + name + '"]')
+  ];
+  const visible = document.createElement("div");
+  for (const original of document.querySelectorAll(selectors.join(','))) {
+    if (!original.getClientRects().length) continue;
+    const copy = original.cloneNode(true);
+    const sources = [original, ...original.querySelectorAll('*')];
+    const copies = [copy, ...copy.querySelectorAll('*')];
+    for (let i = 0; i < sources.length; i++) {
+      const style = getComputedStyle(sources[i]);
+      if (sources[i].hidden || style.display === 'none' || style.visibility === 'hidden') {
+        copies[i].setAttribute('hidden', '');
+      }
+    }
+    copy.querySelectorAll("script, style, noscript, template, iframe, [hidden]").forEach(n => n.remove());
+    if (!copy.hidden) visible.appendChild(copy);
+  }
+  return { title: document.title || "", url: location.href, documentEpoch: performance.timeOrigin,
+           jsonLd, microdata, html: visible.innerHTML || "" };
 }"""
 
 # Owned-page state at a tile deadline. No markup, URL, cookies, or storage.
@@ -74,6 +100,10 @@ class PublicProduct:
     price_regular: str | None = None
     price_old: str | None = None
     displayed_price: str | None = None
+    pack_weight: str | None = None
+    nutrition: str | None = None
+    protein_per_100g: str | None = None
+    seller: str | None = None
     available: bool | None = None
     description: str | None = None
     characteristics: list[Characteristic] = field(default_factory=list)
@@ -171,14 +201,11 @@ _FRONT_VALUES: Final = frozenset({"ok", "failed", "missing"})
 
 def _diagnostic_head(diagnostics: dict[str, Any]) -> str:
     title = diagnostics.get("title")
-    title_text = title.strip() if isinstance(title, str) else ""
-    if len(title_text) > 120:
-        title_text = title_text[:120]
-    ready = bool(diagnostics.get("tile_selector_ready"))
-    return (
-        f"title={title_text!r}; url_class={diagnostics.get('url_class', 'missing')}; "
-        f"tile_selector_ready={ready}"
+    title_text = (
+        "about:blank" if title == "about:blank" else "present" if isinstance(title, str) and title.strip() else "empty"
     )
+    ready = bool(diagnostics.get("tile_selector_ready"))
+    return f"title={title_text!r}; url_class={diagnostics.get('url_class', 'missing')}; tile_selector_ready={ready}"
 
 
 def _probe_token(field: str, value: object) -> str:
@@ -303,14 +330,39 @@ def products_from_document(document: dict[str, Any]) -> list[PublicProduct] | No
     """
     from ozon_mcp.parsing.visible_cards import visible_products  # ruff: ignore[import-outside-top-level]
 
-    found, saw_list = _json_ld_products(document.get("jsonLd") or [])
-    found.extend(_microdata_products(document.get("microdata") or []))
     html = document.get("html")
-    visible, saw_empty = visible_products(html if isinstance(html, str) else "")
-    found = _merge(found, visible)
-    if not found and not saw_list:
-        return [] if saw_empty else None
-    return _dedupe(found)
+    html = html if isinstance(html, str) else ""
+    current_url = document.get("url", "")
+    if url_class(current_url) == "ozon-product":
+        from ozon_mcp.parsing.visible_product import (  # ruff: ignore[import-outside-top-level] - parser cycle
+            visible_product,
+        )
+
+        product = visible_product(html, current_url)
+        if product is not None:
+            return [product]
+        declared, _ = _json_ld_products(document.get("jsonLd") or [])
+        declared.extend(_microdata_products(document.get("microdata") or []))
+        identity = product_link(current_url)
+        return _dedupe([p for p in declared if identity and p.sku == identity[1]]) or None
+    # A rendered grid is authoritative: invalid/ambiguous tiles cannot be
+    # rescued by an unrelated schema Product or an empty ItemList.
+    from ozon_mcp.parsing.visible_cards import (  # ruff: ignore[import-outside-top-level] - parser cycle
+        _parse,
+        _walk,
+    )
+
+    has_grid = any(n.attrs.get("data-widget") == "infiniteVirtualPaginator" for n in _walk(_parse(html)))
+    visible, saw_empty = visible_products(html)
+    if has_grid:
+        return _dedupe(visible) if visible else None
+    if document.get("explicit_empty") is True or saw_empty:
+        return []
+    found, _saw_list = _json_ld_products(document.get("jsonLd") or [])
+    found.extend(_microdata_products(document.get("microdata") or []))
+    if found:
+        return _dedupe(found)
+    return None
 
 
 def _json_ld_products(blocks: object) -> tuple[list[PublicProduct], bool]:

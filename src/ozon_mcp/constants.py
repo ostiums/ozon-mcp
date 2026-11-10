@@ -12,9 +12,8 @@ COMPOSER_URL: Final = "https://www.ozon.ru/api/composer-api.bx/page/json/v2?url=
 ENTRYPOINT_URL: Final = "https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url="
 ACTION_URL: Final = "https://www.ozon.ru/api/composer-api.bx/_action/"
 
-# Chromium flags that get past OZON's Variti antibot when running headed/Xvfb.
+# Chromium process compatibility flags for the headed/Xvfb runtime.
 LAUNCH_ARGS: Final = (
-    "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
     "--disable-dev-shm-usage",
 )

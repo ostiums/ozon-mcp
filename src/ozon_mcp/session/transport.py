@@ -32,6 +32,7 @@ from typing import Any, Final, Self
 from urllib.parse import quote, urljoin, urlsplit
 
 from curl_cffi import CurlOpt, requests as curl_requests
+from playwright.async_api import Page as AsyncPage
 from playwright.sync_api import sync_playwright
 
 from ozon_mcp.constants import (
@@ -45,15 +46,11 @@ from ozon_mcp.constants import (
 )
 from ozon_mcp.errors import OzonError, RateLimitedError, SessionExpiredError, UpstreamError
 from ozon_mcp.parsing.public_storefront import (
-    DEADLINE_VISIBILITY,
-    PUBLIC_PAGE_READER,
-    format_public_diagnostics,
     query_key_names,
-    snapshot_counts,
-    step_budget_ms,
     url_class,
 )
-from ozon_mcp.parsing.visible_cards import EMPTY_RESULT_PHRASES, PUBLIC_TILE_SELECTOR, PUBLIC_TILE_STAGES
+from ozon_mcp.parsing.visible_cards import PUBLIC_TILE_SELECTOR, PUBLIC_TILE_STAGES
+from ozon_mcp.session.browser_account import request_on_owned_page
 from ozon_mcp.session.page_health import classify_page_title, health_message
 from ozon_mcp.session.phone_form import (
     has_separate_russian_prefix,
@@ -64,6 +61,7 @@ from ozon_mcp.session.phone_form import (
 )
 from ozon_mcp.session.profile_lock import clear_dead_profile_lock
 from ozon_mcp.session.proxy import browser_network_args, http_proxy_choice, playwright_proxy
+from ozon_mcp.session.public_reader import read_owned_public
 from ozon_mcp.settings import get_settings
 from ozon_mcp.utils.observability import BROWSER_ACTIVE, SESSION_BOOTSTRAPS, UPSTREAM_LATENCY, UPSTREAM_REQUESTS
 from ozon_mcp.utils.serde import dumps, loads
@@ -217,40 +215,8 @@ def _page_is_closed(page: Any) -> bool:
         return False
 
 
-def _bring_owned_page_forward(page: Any) -> str:
-    """Show the page we own. Other tabs are left open and are not read."""
-    bring = getattr(page, "bring_to_front", None)
-    if bring is None:
-        return "missing"
-    try:
-        bring()
-    except Exception:
-        return "failed"
-    return "ok"
-
-
 def _elapsed_ms(started: float) -> int:
     return max(0, int((time.monotonic() - started) * 1000))
-
-
-def _is_timeout(exc: BaseException) -> bool:
-    return isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError"
-
-
-def _public_tile_ready(page: Any, timeout_ms: int) -> bool:
-    """True when the first inspected tile is visible before the remaining budget ends.
-
-    ``visible`` means a non-empty bounding box and no ``visibility:hidden``.
-    An attached node with an empty box does not pass. ``.first`` waits for
-    that one node, not for a later match.
-    """
-    if timeout_ms <= 0:
-        return False
-    try:
-        page.locator(PUBLIC_TILE_SELECTOR).first.wait_for(state="visible", timeout=timeout_ms)
-    except Exception:
-        return False
-    return True
 
 
 _STAGE_FIELDS: Final = {
@@ -354,124 +320,6 @@ def _stage_counts(page: Any, *, started: float, total_ms: int) -> dict[str, Any]
     return measured
 
 
-def _public_mark(page: Any, context: Any, *, started: float, total_ms: int) -> dict[str, Any]:
-    """Identity plus structural counts at one instant of the shared clock."""
-    mark = _identity_mark(page, context)
-    mark["ms"] = _elapsed_ms(started)
-    mark.update(_stage_counts(page, started=started, total_ms=total_ms))
-    return mark
-
-
-def _measure_deadline(page: Any, *, started: float, total_ms: int, brought_to_front: str) -> dict[str, Any]:
-    """Non-waiting counts on the owned page. The HTML reader is not evaluated."""
-    measured: dict[str, Any] = {"deadline_probe": "measured", "bring_to_front": brought_to_front}
-    measured.update(_stage_counts(page, started=started, total_ms=total_ms))
-    if not _budget_left(started, total_ms):
-        measured["document_visibility"] = "unread"
-        measured["document_focused"] = None
-        return measured
-    measured["document_visibility"], measured["document_focused"] = _page_visibility(page)
-    return measured
-
-
-def _page_visibility(page: Any) -> tuple[str, bool | None]:
-    try:
-        state = page.evaluate(DEADLINE_VISIBILITY)
-    except Exception:
-        return "unread", None
-    if not isinstance(state, dict):
-        return "unread", None
-    raw_visibility = state.get("visibility")
-    focused = state.get("focused")
-    visibility = "unread"
-    if raw_visibility in {"visible", "hidden", "prerender"}:
-        visibility = str(raw_visibility)
-    focused_bit = focused if isinstance(focused, bool) else None
-    return visibility, focused_bit
-
-
-def _raise_public(
-    page: Any,
-    lead: str,
-    *,
-    ready: bool,
-    goto_mark: dict[str, Any] | None,
-    probe_mark: dict[str, Any] | None = None,
-    probe: dict[str, Any] | None = None,
-) -> None:
-    """Raise a diagnostic error. Marks carry counts and query names, not the URL."""
-    try:
-        title = page.title()
-    except Exception:
-        title = ""
-    status: dict[str, Any] = {
-        "title": title if isinstance(title, str) else "",
-        "url_class": url_class(getattr(page, "url", "")),
-        "tile_selector_ready": ready,
-    }
-    if probe:
-        status.update(probe)
-    if goto_mark is not None:
-        status["goto_mark"] = goto_mark
-    if probe_mark is not None:
-        status["probe_mark"] = probe_mark
-    raise OzonError(lead + format_public_diagnostics(status))
-
-
-def _raise_unread_tile(
-    page: Any,
-    context: Any,
-    started: float,
-    total_ms: int,
-    brought_to_front: str,
-    goto_mark: dict[str, Any],
-) -> None:
-    """Deadline error with a bounded probe, or an explicit skipped probe."""
-    probe_mark = _identity_mark(page, context)
-    probe_mark["ms"] = _elapsed_ms(started)
-    if _budget_left(started, total_ms):
-        probe = _measure_deadline(page, started=started, total_ms=total_ms, brought_to_front=brought_to_front)
-        detail = "The HTML snapshot was not taken. "
-    else:
-        probe = {"deadline_probe": "skipped", "bring_to_front": brought_to_front}
-        detail = "The deadline probe was not taken. "
-    lead = "Public tile selector was not ready before the deadline. " + detail + "This is not an empty search result. "
-    _raise_public(page, lead, ready=False, goto_mark=goto_mark, probe_mark=probe_mark, probe=probe)
-
-
-def _phrase_visible(page: Any, phrase: str) -> bool:
-    getter = getattr(page, "get_by_text", None)
-    if getter is None:
-        return False
-    try:
-        located = getter(phrase, exact=False)
-    except Exception:
-        return False
-    try:
-        return bool(located.count() and located.first.is_visible())
-    except Exception:
-        return False
-
-
-def _empty_phrase_visible(page: Any) -> bool:
-    return any(_phrase_visible(page, phrase) for phrase in EMPTY_RESULT_PHRASES)
-
-
-def _status(page: Any, *, ready: bool, data: dict[str, Any]) -> dict[str, Any]:
-    title = data.get("title")
-    if not isinstance(title, str):
-        try:
-            title = page.title()
-        except Exception:
-            title = ""
-    return {
-        "title": title if isinstance(title, str) else "",
-        "url_class": url_class(getattr(page, "url", "")),
-        "tile_selector_ready": ready,
-        "counts": snapshot_counts(data.get("html")),
-    }
-
-
 def _public_catalog_path(path: str) -> str:
     """Allow only a same-site search, category or product path."""
     if not path.startswith("/") or path.startswith("//") or "\\" in path or any(ord(char) < 32 for char in path):
@@ -521,16 +369,23 @@ class OzonSession:
         if self._page is not None:
             self._raise_for_antibot_challenge()
             return
+        public = get_settings().storefront == "public"
         fresh = not (self._profile / "Default").exists()
-        _make_private(self._profile, create=True)
-        _make_private(self._backup)
-        _make_private(self._seed_state)
-        self._clear_stale_lock()
+        if public:
+            if fresh:
+                raise OzonError("Public mode requires an existing profile; no state is imported.")
+            # Chrome enforces the lock. Never unlink a possibly live owner's lock.
+        else:
+            _make_private(self._profile, create=True)
+            _make_private(self._backup)
+            _make_private(self._seed_state)
+            self._clear_stale_lock()
         settings = get_settings()
         proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
         launch_kwargs: dict[str, Any] = {
             "user_data_dir": str(self._profile),
             "headless": False,
+            "timeout": int(settings.public_read_timeout * 1000) if public else self._browser_ms(),
             "args": [*LAUNCH_ARGS, *browser_network_args(proxy_url=proxy_url, remote_dns=settings.proxy_remote_dns)],
             "locale": "ru-RU",
             "timezone_id": "Europe/Moscow",
@@ -545,17 +400,19 @@ class OzonSession:
             launch_kwargs["channel"] = settings.browser_channel
         self._playwright = sync_playwright().start()
         self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
-        if fresh:
+        if fresh and not public:
             self._seed_from_state()
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
         BROWSER_ACTIVE.set(1)
+        if public:
+            return  # Public catalog navigation owns its shared deadline.
         self._page.goto(HOME_URL, wait_until="domcontentloaded", timeout=self._browser_ms(1.5))
         self._page.wait_for_timeout(12_000)  # let Variti set cookies
         self._raise_for_antibot_challenge()
 
-    def _raise_for_antibot_challenge(self) -> None:
+    def _raise_for_antibot_challenge(self, title: str | None = None) -> None:
         """Stop on an unhealthy title. A network title is not a CAPTCHA."""
-        message = health_message(classify_page_title(self._page.title() or ""))
+        message = health_message(classify_page_title((self._page.title() if title is None else title) or ""))
         if message is None:
             return
         self._logging_in = False
@@ -633,7 +490,8 @@ class OzonSession:
                 logger.debug("browser teardown error", exc_info=True)
         self._playwright = self._context = self._page = None
         BROWSER_ACTIVE.set(0)
-        _make_private(self._profile)
+        if get_settings().storefront != "public":
+            _make_private(self._profile)
 
     def _ensure_browser(self) -> None:
         if self._page is None:
@@ -642,6 +500,8 @@ class OzonSession:
     # -- bootstrap: harvest cookies + headers, build the HTTP session --------
     def _bootstrap(self, reason: str = "initial") -> None:
         SESSION_BOOTSTRAPS.labels(reason=reason).inc()
+        if get_settings().storefront == "public":
+            raise OzonError("Public account requests use the owned browser, not HTTP bootstrap.")
         self._launch_browser()
         if not self._browser_is_signed_in():
             # A page signed the profile out; put the kept copy back rather than
@@ -682,9 +542,15 @@ class OzonSession:
         settings = get_settings()
         proxy_url = settings.proxy_url.get_secret_value() if settings.proxy_url is not None else None
         choice = http_proxy_choice(proxy_url)
-        kwargs: dict[str, Any] = {"impersonate": self._impersonate, "trust_env": False}
+        # libcurl also reads NO_PROXY independently of curl_cffi's trust_env.
+        # Set it explicitly so an ambient wildcard cannot bypass this proxy.
+        kwargs: dict[str, Any] = {
+            "impersonate": self._impersonate,
+            "trust_env": False,
+            "curl_options": {CurlOpt.NOPROXY: ""},
+        }
         if choice.disable_env_proxy:
-            kwargs["curl_options"] = {CurlOpt.PROXY: ""}
+            kwargs["curl_options"][CurlOpt.PROXY] = ""
             return kwargs
         kwargs["proxy"] = choice.proxy
         if choice.proxy_auth is not None:
@@ -714,6 +580,8 @@ class OzonSession:
     def save_state(self) -> None:
         """Push HTTP-rotated session cookies back into the browser profile."""
         with self._lock:
+            if get_settings().storefront == "public":
+                return  # Browser owns token rotation; never inject cookies.
             if self._context is None or self._http is None:
                 return
             jar = {c.name: c.value for c in self._http.cookies.jar}
@@ -812,56 +680,89 @@ class OzonSession:
                 self._reconcile_completed_manual_login()
             if self._logging_in:
                 raise OzonError("login is in progress; finish submit_login_code() before reading account data")
-            status, text, retry_after = 0, "", None
-            started = time.monotonic()
-            response: Any = None
-            redirect_detail = ""
-            for attempt in range(1, attempts + 1):
-                redirect_detail = ""
-                self._ensure_http()
-                headers = dict(self._headers)
-                headers["accept"] = "application/json"
-                if body is not None:
-                    headers["content-type"] = "application/json"
-                try:
-                    response = self._http.request(
-                        method,
-                        url,
-                        headers=headers,
-                        timeout=settings.request_timeout,
-                        allow_redirects=False,
-                        data=dumps(body) if body is not None else None,
-                    )
-                    status, text = response.status_code, response.text
-                    retry_after = self._retry_after(response) if status == _TOO_MANY_REQUESTS else None
-                # A transport failure carries no status; it is retried like a 5xx.
-                except Exception:
-                    response = None
-                    status, text, retry_after = 0, "", None
-                    logger.debug("upstream transport error (%s)", backend)
+            if settings.storefront == "public":
+                return self._request_in_browser(method, url, body, backend)
+            return self._request_http(method, url, body, backend, attempts)
 
-                redirect_detail = _response_redirect_detail(response, status, url)
-                action = self._retry_action(status, text, attempt, attempts, backend)
-                if action == "rebootstrap":
-                    self._rebootstrap()
-                    continue
-                if action == "sleep":
-                    self._sleep_before_retry(attempt, retry_after)
-                    continue
-                if action == "page":
-                    return self._page_from(
-                        text,
-                        status,
-                        backend,
-                        started,
-                        allow_client_error=method.upper() != "GET",
-                        redirect_detail=redirect_detail,
-                    )
-            UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
-            UPSTREAM_REQUESTS.labels(backend=backend, outcome="failed").inc()
-            if status == _TOO_MANY_REQUESTS:
-                raise RateLimitedError(retry_after)
-            raise UpstreamError(status, redirect_detail)
+    def _request_http(self, method: str, url: str, body: object, backend: Backend, attempts: int) -> dict[str, Any]:
+        settings = get_settings()
+        status, text, retry_after = 0, "", None
+        started = time.monotonic()
+        response: Any = None
+        redirect_detail = ""
+        for attempt in range(1, attempts + 1):
+            redirect_detail = ""
+            self._ensure_http()
+            headers = dict(self._headers)
+            headers["accept"] = "application/json"
+            if body is not None:
+                headers["content-type"] = "application/json"
+            try:
+                response = self._http.request(
+                    method,
+                    url,
+                    headers=headers,
+                    timeout=settings.request_timeout,
+                    allow_redirects=False,
+                    data=dumps(body) if body is not None else None,
+                )
+                status, text = response.status_code, response.text
+                retry_after = self._retry_after(response) if status == _TOO_MANY_REQUESTS else None
+            # A transport failure carries no status; it is retried like a 5xx.
+            except Exception:
+                response = None
+                status, text, retry_after = 0, "", None
+                logger.debug("upstream transport error (%s)", backend)
+
+            redirect_detail = _response_redirect_detail(response, status, url)
+            action = self._retry_action(status, text, attempt, attempts, backend)
+            if action == "rebootstrap":
+                self._rebootstrap()
+                continue
+            if action == "sleep":
+                self._sleep_before_retry(attempt, retry_after)
+                continue
+            if action == "page":
+                return self._page_from(
+                    text,
+                    status,
+                    backend,
+                    started,
+                    allow_client_error=method.upper() != "GET",
+                    redirect_detail=redirect_detail,
+                )
+        UPSTREAM_LATENCY.labels(backend=backend).observe(time.monotonic() - started)
+        UPSTREAM_REQUESTS.labels(backend=backend, outcome="failed").inc()
+        if status == _TOO_MANY_REQUESTS:
+            raise RateLimitedError(retry_after)
+        raise UpstreamError(status, redirect_detail)
+
+    def _request_in_browser(self, method: str, url: str, body: object, backend: Backend) -> dict[str, Any]:
+        """Existing account operations on the authenticated browser's own origin.
+
+        This does not use curl impersonation, harvest headers, transfer cookies,
+        restore profiles, follow redirects, or retry commands after an uncertain
+        result. Catalog reads still use only the passive public DOM reader.
+        """
+        self._ensure_browser()
+        if self._page is None or _page_is_closed(self._page):
+            raise OzonError("Account request has no open owned page.")
+        if not self._browser_is_signed_in():
+            raise SessionExpiredError
+        started = time.monotonic()
+        response = self._page._sync(  # ruff: ignore[private-member-access] - same-page bounded async bridge
+            request_on_owned_page(
+                AsyncPage(self._page._impl_obj),  # ruff: ignore[private-member-access] - same owned page
+                method,
+                url,
+                body,
+                budget=get_settings().request_timeout,
+                check_title=self._raise_for_antibot_challenge,
+            )
+        )
+        return self._page_from(
+            response["text"], response["status"], backend, started, allow_client_error=method.upper() != "GET"
+        )
 
     def _retry_action(self, status: int, text: str, attempt: int, attempts: int, backend: Backend) -> str:
         if self._blocked(status, text):
@@ -973,84 +874,40 @@ class OzonSession:
         access-token on navigation, then persist. Returns the auth state.
         """
         with self._lock:
+            if get_settings().storefront == "public":
+                self._ensure_browser()
+                # Refresh the public document without restoring or importing state.
+                self._page.goto(HOME_URL, wait_until="domcontentloaded", timeout=self._browser_ms())
+                self._raise_for_antibot_challenge()
+                return self._browser_is_signed_in()
             self._rebootstrap()
             return self.is_authenticated(self.fetch("/my/orderlist"))
 
     # -- DOM reads (need the browser) ----------------------------------------
     def read_public_page(self, path: str) -> dict[str, Any]:
-        """Open one public catalog path on the owned page and read that page only.
-
-        Restored tabs and popups are not adopted. ``goto`` and ``evaluate`` use
-        the same page object. A foreground about:blank tab is not evidence of
-        what this page contained. Navigation and the tile wait share
-        ``public_read_timeout``. A fixed sleep is not used. Live timing is
-        unmeasured.
-        """
+        """Read one owned public document; never adopt restored or foreign tabs."""
         checked = _public_catalog_path(path)
         with self._lock:
             if self._logging_in:
-                message = "login is in progress; finish it before reading the storefront"
-                raise OzonError(message)
-            self._ensure_browser()
-            if self._page is None or _page_is_closed(self._page):
-                message = "Public read has no open owned page. Nothing was read. This is not an empty search result."
-                raise OzonError(message)
-            brought_to_front = _bring_owned_page_forward(self._page)
+                raise OzonError("login is in progress; finish it before reading the storefront")
             started = time.monotonic()
             total_ms = int(get_settings().public_read_timeout * 1000)
-            goto_ms = step_budget_ms(total_ms, _elapsed_ms(started))
-            if goto_ms <= 0:
-                message = (
-                    "Public read budget was already exhausted. "
-                    "Nothing was read. This is not an empty search result. "
-                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
-                )
-                raise OzonError(message)
-            try:
-                self._page.goto(
+            self._ensure_browser()
+            if self._page is None or _page_is_closed(self._page):
+                raise OzonError("Public read has no open owned page. This is not an empty search result.")
+            # Same Playwright loop and same page. The small sync/async bridge is
+            # needed because sync Page.evaluate has no timeout parameter.
+            data = self._page._sync(  # ruff: ignore[private-member-access] - same-page bounded async bridge
+                read_owned_public(
+                    AsyncPage(self._page._impl_obj),  # ruff: ignore[private-member-access] - same owned page
                     HOME_URL.rstrip("/") + checked,
-                    wait_until="domcontentloaded",
-                    timeout=goto_ms,
+                    deadline=started + total_ms / 1000,
+                    total_ms=total_ms,
+                    check_title=self._raise_for_antibot_challenge,
                 )
-            except Exception as exc:
-                if not _is_timeout(exc):
-                    raise
-                message = (
-                    "Public navigation used the shared read budget. "
-                    "Nothing was read. This is not an empty search result. "
-                    + format_public_diagnostics(_status(self._page, ready=False, data={}))
-                )
-                raise OzonError(message) from exc
-            self._raise_for_antibot_challenge()
-            goto_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
-            owned_class = url_class(getattr(self._page, "url", ""))
-            if owned_class == "about:blank":
-                lead = (
-                    "Public read navigated the owned page and it is still about:blank. "
-                    "Nothing was read. This is not an empty search result. "
-                )
-                _raise_public(self._page, lead, ready=False, goto_mark=goto_mark)
-            ready = _public_tile_ready(self._page, step_budget_ms(total_ms, _elapsed_ms(started)))
-            if not ready and not _empty_phrase_visible(self._page):
-                _raise_unread_tile(self._page, self._context, started, total_ms, brought_to_front, goto_mark)
-            self._raise_for_antibot_challenge()
-            probe_mark = _public_mark(self._page, self._context, started=started, total_ms=total_ms)
-            if _elapsed_ms(started) >= total_ms:
-                lead = (
-                    "Public read budget ended before the snapshot. "
-                    "Nothing was read. This is not an empty search result. "
-                )
-                _raise_public(self._page, lead, ready=ready, goto_mark=goto_mark, probe_mark=probe_mark)
+            )
             self._last_used = time.time()
-            data = self._page.evaluate(PUBLIC_PAGE_READER)
-        if not isinstance(data, dict):
-            message = "Public storefront page did not return a document. Nothing was read."
-            raise OzonError(message)
-        result = dict(data)
-        result["diagnostics"] = _status(self._page, ready=ready, data=result)
-        result["diagnostics"]["goto_mark"] = goto_mark
-        result["diagnostics"]["probe_mark"] = probe_mark
-        return result
+            return data
 
     def probe_owned_search(self) -> dict[str, Any]:
         """Structural counts for the current owned page. Does not navigate or adopt a tab.
@@ -1096,10 +953,8 @@ class OzonSession:
                 report["elapsed_ms"] = _elapsed_ms(started)
                 return report
             counts = _stage_counts(self._page, started=started, total_ms=total_ms)
-            if _budget_left(started, total_ms):
-                visibility, focused = _page_visibility(self._page)
-            else:
-                visibility, focused = "unread", None
+            # This sanctioned probe is counts-only: no evaluate script.
+            visibility, focused = "unread", None
             report.update(counts)
             report["document_visibility"] = visibility
             report["document_focused"] = focused
@@ -1242,7 +1097,8 @@ class OzonSession:
             if signed_in:
                 # Closes the browser, which flushes the new session to the
                 # profile; the next call relaunches against it.
-                self.back_up_profile()
+                if get_settings().storefront != "public":
+                    self.back_up_profile()
                 self._http = None
             self._logging_in = not signed_in
             return signed_in
