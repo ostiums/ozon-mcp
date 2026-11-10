@@ -46,7 +46,7 @@ def session_status() -> SessionStatus:
         owned_search=probe,
         detail=(
             "signed out; a kept profile copy is tried automatically on the next call"
-            if backup
+            if backup and settings.storefront != "public"
             else "signed out and no profile copy kept — start_login() is needed"
         ),
     )
@@ -85,7 +85,11 @@ def submit_login_code(code: str) -> SessionStatus:
         signed_in=True,
         user_id=session.signed_in_user(),
         backup_available=session.has_backup(),
-        detail="signed in; the profile was backed up",
+        detail=(
+            "signed in; the existing browser profile retains the session"
+            if settings.storefront == "public"
+            else "signed in; the profile was backed up"
+        ),
         cart_enabled=settings.cart_enabled,
         writes_enabled=settings.enable_writes,
         orders_enabled=settings.enable_orders,

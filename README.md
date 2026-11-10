@@ -247,7 +247,7 @@ different answers.
 | `OZON_PROFILE_BACKUP` | `/data/profile.backup` | Copy of a known-good profile, restored on a sign-out |
 | `OZON_STATE_PATH` | `/data/state.json` | Legacy cookie snapshot, imported once to seed a new profile |
 | `OZON_BROWSER_CHANNEL` | unset | `chrome` selects installed stable Chrome; unset keeps Playwright's Chromium |
-| `OZON_STOREFRONT` | `composer` | `public` reads schema.org data in the existing browser for search and product cards. It is not a fallback |
+| `OZON_STOREFRONT` | `composer` | `public` reads schema.org plus inspected visible product widgets on the owned browser. It is not a composer fallback |
 | `OZON_PROXY_URL` | unset | Explicit proxy for the browser and HTTP client. Unset is direct; environment proxies are not used |
 | `OZON_PROXY_REMOTE_DNS` | `0` | With `OZON_PROXY_URL`, resolve names at the proxy and exclude only the proxy host |
 | `OZON_IMPERSONATE` | `chrome124` | curl_cffi TLS-impersonation profile |
@@ -381,3 +381,58 @@ for personal, low-volume use, and you are responsible for how you use it.
 ## License
 
 [MIT](LICENSE)
+
+
+### Public storefront and account operations
+
+With `OZON_STOREFRONT=public`, search reads one rendered public page. Eligible
+brand/category redirects are accepted only with the known grid or an explicit
+empty-result declaration. A short document settle precedes the snapshot;
+structural probes run only on failure, for at most one second, outside the
+snapshot reserve. Missing or ambiguous tiles are a read failure, not an empty
+catalog. Diagnostics contain title classifications and query key names only.
+
+`cheap` and `expensive` preserve site relevance during navigation, then order
+the returned tiles by their displayed price. They do **not** claim the cheapest
+products across the entire site. Public product cards can include pack weight,
+nutrition and a unique visible seller. Explicit protein per 100 g takes priority;
+calculation requires explicit per-serving protein **and** serving grams. The
+string records its basis. Pack weight divided by serving count is never used.
+Optional delivery text comes only from the product's visible `webDelivery`
+widget; unknown or ambiguous layouts return null. This is not a checkout quote.
+
+Public catalog mode still supports the connector's existing account operations.
+They use same-origin requests in the owned authenticated browser, after ensuring
+a healthy HTTPS Ozon document. A cold `about:blank` page is navigated to the
+public home first. There is no header-harvesting order-list request, curl
+impersonation, profile restore/seed, or cookie transfer in this mode. Browser
+redirects are rejected without following or inspecting their destinations.
+Commands are not automatically replayed after an uncertain result. Public mode
+requires an existing browser profile; it never adopts another browser or tab.
+The composer mode's existing transport remains separate, with redirects refused
+and explicit proxy / `NO_PROXY` control.
+
+Cart mutation is still gated by `OZON_ENABLE_CART`. Checkout configuration and
+order/payment actions retain their separate guards. A read-only `get_checkout`
+refreshes the quote from the selected cart lines; it does not place or pay for
+an order. An upstream refusal is a failure, never a quote inferred from a card.
+
+`scripts/purchase_review.py` provides a narrowly scoped verification routine for
+SKU 185618681. Its caller supplies MCP `tools/call` and a durable private
+snapshot writer. It requires a complete declared cart, known quantities and
+selection, and CART=1 / WRITES=0 / ORDERS=0. It requests one item, reads the
+quote, then restores the original quantity/selection and verifies equality.
+It never calls checkout configuration, ordering, payment, or cancellation.
+Use it only with exclusive ownership of the diagnostic browser profile.
+
+The regression suite includes real offline Chromium fixtures with blocked
+network and temporary empty contexts. To run all checks:
+
+```bash
+uv sync --frozen
+uv run playwright install chromium
+uv run ruff format --check src tests scripts
+uv run ruff check --no-fix src tests scripts
+uv run ty check
+uv run pytest
+```

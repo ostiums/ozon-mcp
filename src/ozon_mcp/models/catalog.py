@@ -167,6 +167,20 @@ class ProductCard(OzonModel):
         default=None,
         description="The amount printed on the public page when its price role was not labeled.",
     )
+    url: str | None = None
+    pack_weight: str | None = Field(default=None, description="Explicit public pack weight, with unit.")
+    nutrition: str | None = Field(default=None, description="Public nutrition text, retaining its declared basis.")
+    protein_per_100g: str | None = Field(
+        default=None,
+        description=(
+            "Explicit g/100 g, or calculated from declared per-serving protein and "
+            "serving grams; string states basis. Never derived from pack weight/cou"
+            "nt."
+        ),
+    )
+    seller: str | None = Field(
+        default=None, description="Unique visible seller name in the public current-seller widget."
+    )
     available: bool | None = Field(default=None, description="Whether Ozon offers it for sale at all.")
     rating: float | None = Field(default=None, description="The rating Ozon prints on the card, e.g. 4.9.")
     reviews_count: int | None = Field(default=None, description="How many reviews it has; get_reviews() reads them.")

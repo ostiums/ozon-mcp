@@ -63,34 +63,32 @@ def test_query_key_names_drop_values_and_unsafe_names() -> None:
 
 
 def test_read_marks_keep_query_names_and_drop_the_url() -> None:
-    line = format_public_diagnostics(
-        {
-            "title": "present",
+    line = format_public_diagnostics({
+        "title": "present",
+        "url_class": "ozon-search",
+        "tile_selector_ready": False,
+        "deadline_probe": "measured",
+        "goto_mark": {
+            "ms": 400,
+            "context_pages": 2,
+            "owned_index": 0,
+            "other_search_pages": 1,
             "url_class": "ozon-search",
-            "tile_selector_ready": False,
-            "deadline_probe": "measured",
-            "goto_mark": {
-                "ms": 400,
-                "context_pages": 2,
-                "owned_index": 0,
-                "other_search_pages": 1,
-                "url_class": "ozon-search",
-                "query_keys": "page,sorting,text",
-                "query_keys_dropped": 0,
-                "paginator": 1,
-                "tile_grids": 0,
-            },
-            "probe_mark": {
-                "ms": 20000,
-                "context_pages": 2,
-                "owned_index": 0,
-                "other_search_pages": 1,
-                "url_class": "ozon-search",
-                "query_keys": "https://www.ozon.ru/search/?text=secret",
-                "query_keys_dropped": 0,
-            },
-        }
-    )
+            "query_keys": "page,sorting,text",
+            "query_keys_dropped": 0,
+            "paginator": 1,
+            "tile_grids": 0,
+        },
+        "probe_mark": {
+            "ms": 20000,
+            "context_pages": 2,
+            "owned_index": 0,
+            "other_search_pages": 1,
+            "url_class": "ozon-search",
+            "query_keys": "https://www.ozon.ru/search/?text=secret",
+            "query_keys_dropped": 0,
+        },
+    })
     assert "goto_ms=400" in line
     assert "probe_ms=20000" in line
     assert "goto_owned_index=0" in line
@@ -103,36 +101,37 @@ def test_read_marks_keep_query_names_and_drop_the_url() -> None:
 
 
 def test_deadline_probe_line_has_counts_and_no_page_text() -> None:
-    line = format_public_diagnostics(
-        {
-            "title": "HX " + ("x" * 200),
-            "url_class": "ozon-search",
-            "tile_selector_ready": False,
-            "deadline_probe": "measured",
-            "bring_to_front": "ok",
-            "document_visibility": "hidden",
-            "document_focused": False,
-            "paginator": 1,
-            "tile_grids": 1,
-            "tile_roots_attached": 3,
-            "product_anchors_attached": 3,
-            "title_spans_attached": 3,
-            "title_spans_visible": 0,
-            "first_title_visible": False,
-            "counts": {"html_present": False, "tile_roots": 0},
-            "leak": "https://www.ozon.ru/search/?text=secret",
-        }
-    )
+    line = format_public_diagnostics({
+        "title": "HX " + ("x" * 200),
+        "url_class": "ozon-search",
+        "tile_selector_ready": False,
+        "deadline_probe": "measured",
+        "bring_to_front": "ok",
+        "document_visibility": "hidden",
+        "document_focused": False,
+        "paginator": 1,
+        "tile_grids": 1,
+        "tile_roots_attached": 3,
+        "product_anchors_attached": 3,
+        "title_spans_attached": 3,
+        "title_spans_visible": 0,
+        "first_title_visible": False,
+        "counts": {"html_present": False, "tile_roots": 0},
+        "leak": "https://www.ozon.ru/search/?text=secret",
+    })
     assert "deadline_probe=measured" in line
     assert "document_visibility=hidden" in line
     assert "title_spans_visible=0" in line
     assert "tile_roots=0" not in line
     assert "https://" not in line
     assert "secret" not in line
-    assert len(line.split("title='", 1)[1].split("'", 1)[0]) == 120
-    skipped = format_public_diagnostics(
-        {"title": "present", "url_class": "ozon-search", "tile_selector_ready": False, "deadline_probe": "skipped"}
-    )
+    assert "title='present'" in line
+    skipped = format_public_diagnostics({
+        "title": "present",
+        "url_class": "ozon-search",
+        "tile_selector_ready": False,
+        "deadline_probe": "skipped",
+    })
     assert "dom_counts=not_taken" in skipped
     assert "tile_roots=" not in skipped
 
@@ -186,12 +185,12 @@ def test_foreign_and_conflicting_identity_are_dropped() -> None:
             """
         ]
     }
-    assert products_from_document(document) == []
+    assert products_from_document(document) is None
 
 
 def test_explicit_empty_list_is_empty_and_a_bare_page_is_undeclared() -> None:
     empty = products_from_document({"jsonLd": ['{"@type":"ItemList","itemListElement":[]}']})
-    assert empty == []
+    assert empty is None  # Schema-only emptiness does not prove an empty visible result.
     assert products_from_document({"jsonLd": [], "microdata": []}) is None
 
 

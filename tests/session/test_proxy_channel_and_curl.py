@@ -91,7 +91,7 @@ def test_session_kwargs_match_the_choice(monkeypatch: pytest.MonkeyPatch) -> Non
     kwargs = OzonSession()._http_client_kwargs()
     assert kwargs["trust_env"] is False
     assert kwargs["proxy"] == PROXY
-    assert "curl_options" not in kwargs
+    assert not kwargs["curl_options"][CurlOpt.NOPROXY]
     direct = OzonSettings()
     monkeypatch.setattr("ozon_mcp.session.transport.get_settings", lambda: direct)
     bare = OzonSession()._http_client_kwargs()
@@ -120,6 +120,7 @@ def _recorded(url: str, proxies: dict[str, str]) -> dict[int, object]:
         proxies_list=[proxies, None],
         verify_list=[True, None],
         impersonate="chrome124",
+        curl_options={CurlOpt.NOPROXY: ""},
         timeout=1,
         allow_redirects=False,
     )
@@ -136,7 +137,7 @@ def test_installed_library_uses_explicit_proxy_for_https_connect(monkeypatch: py
     https = _recorded("https://www.ozon.ru/api/composer-api.bx/page/json/v2?url=/search/", session.proxies)
     assert https[int(CurlOpt.PROXY)] == PROXY
     assert https[int(CurlOpt.HTTPPROXYTUNNEL)] == 1
-    assert int(CurlOpt.NOPROXY) not in https
+    assert not https[int(CurlOpt.NOPROXY)]
     http = _recorded("http://www.ozon.ru/search/", session.proxies)
     assert http[int(CurlOpt.PROXY)] == PROXY
     assert int(CurlOpt.HTTPPROXYTUNNEL) not in http

@@ -16,7 +16,6 @@ from ozon_mcp.settings import OzonSettings
 from support import page
 
 if TYPE_CHECKING:
-
     from support import FakeSession
 
 FIXTURE = Path("tests/fixtures/public-storefront-search.html")
@@ -44,7 +43,7 @@ def test_public_search_reads_the_open_page_and_not_composer(monkeypatch: pytest.
     monkeypatch.setattr(public_catalog, "get_settings", lambda: settings)
     monkeypatch.setattr(public_catalog, "get_session", Session)
     tiles = catalog.search("HX Nutrition Zero Isolate", sort="cheap", limit=24)
-    assert calls == ["/search/?page=1&text=HX%20Nutrition%20Zero%20Isolate&sorting=price"]
+    assert calls == ["/search/?page=1&text=HX%20Nutrition%20Zero%20Isolate"]
     assert [tile.sku for tile in tiles] == ["1600000001", "1600000002"]
     assert tiles[0].price == "2499"
     assert tiles[1].price is None

@@ -31,7 +31,13 @@ from ozon_mcp.models.orders import OrderProduct
 from ozon_mcp.parsing import catalog as parse
 from ozon_mcp.parsing.common import declared_counter, next_pages
 from ozon_mcp.parsing.orders import ORDER_NUMBER_RE, order_numbers_from_link, parse_order_products
-from ozon_mcp.services.public_catalog import product_public, public_storefront_enabled, require_composer, search_public
+from ozon_mcp.services.public_catalog import (
+    delivery_public,
+    product_public,
+    public_storefront_enabled,
+    require_composer,
+    search_public,
+)
 from ozon_mcp.utils.money import to_kopecks
 from ozon_mcp.utils.serde import dumps
 
@@ -255,8 +261,9 @@ def delivery_estimate(sku_or_url: str) -> DeliveryEstimate:
     page. That endpoint is pinned to Ozon's current layout, so if it stops
     answering we read the rendered page instead rather than returning nothing.
     """
-    require_composer("delivery_estimate")
     sku = _sku(sku_or_url)
+    if public_storefront_enabled():
+        return delivery_public(sku)
     async_data = base64.b64encode(dumps({"ci": WEB_DELIVERY_CI, "url": f"/product/{sku}/"}).encode()).decode()
     state = get_session().widget_state(WEB_DELIVERY_STATE_ID, async_data).get("state")
     if state:

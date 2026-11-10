@@ -1,7 +1,7 @@
 """Search tiles from the inspected public grid, and nothing outside it.
 
 The grid is ``div[data-widget=infiniteVirtualPaginator]`` containing
-``div.tileGridDesktop``. Each tile is ``div.tile-root[data-index]``. The title
+``div[data-widget=tileGridDesktop]`` (also the older class form). Each tile is ``div.tile-root[data-index]``. The title
 is ``span.tsBody500Medium`` inside ``a[target=_blank][href^=/product/]``. The
 amount is ``span.tsHeadline500Medium`` in that same tile. Hashed classes are
 ignored. The amount is the displayed price, not a bank price: the inspected
@@ -10,11 +10,13 @@ tile had no «С банками» label.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Final, override
 
 from ozon_mcp.parsing.public_storefront import PublicProduct, product_link
+from ozon_mcp.utils.money import to_kopecks
 
 EMPTY_RESULT_PHRASES: Final = (
     "ничего не нашлось",
@@ -25,31 +27,23 @@ _SKIP_TAGS: Final = frozenset({"script", "style", "noscript", "template", "ifram
 _VOID_TAGS: Final = frozenset({"area", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"})
 _TITLE_CLASS: Final = "tsBody500Medium"
 _PRICE_CLASS: Final = "tsHeadline500Medium"
-# The inspected public card. Hashed classes are intentionally absent.
-PUBLIC_TILE_SELECTOR: Final = (
-    'div[data-widget="infiniteVirtualPaginator"] '
-    "div.tileGridDesktop div.tile-root[data-index] "
-    'a[target="_blank"][href^="/product/"] span.tsBody500Medium'
-)
-# Same selector, stopped at each boundary. Counts at a deadline use these.
-# They are not a second parser.
+# Both observed layouts; each grid is a strict descendant of the paginator.
+PUBLIC_PAGINATOR: Final = 'div[data-widget="infiniteVirtualPaginator"]'
+PUBLIC_GRID: Final = 'div:is(.tileGridDesktop, [data-widget="tileGridDesktop"])'
+PUBLIC_GRID_SELECTOR: Final = PUBLIC_PAGINATOR + " " + PUBLIC_GRID
+PUBLIC_TILE_ROOT_SELECTOR: Final = PUBLIC_GRID_SELECTOR + " div.tile-root[data-index]"
+PUBLIC_ANCHOR_SELECTOR: Final = PUBLIC_TILE_ROOT_SELECTOR + ' a[target="_blank"][href^="/product/"]'
+PUBLIC_TILE_SELECTOR: Final = PUBLIC_ANCHOR_SELECTOR + " span.tsBody500Medium"
 PUBLIC_TILE_STAGES: Final = (
-    ("paginator", 'div[data-widget="infiniteVirtualPaginator"]'),
-    ("tile_grids", 'div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop'),
-    (
-        "tile_roots",
-        'div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop div.tile-root[data-index]',
-    ),
-    (
-        "product_anchors",
-        ('div[data-widget="infiniteVirtualPaginator"] div.tileGridDesktop '
-        'div.tile-root[data-index] a[target="_blank"][href^="/product/"]'),
-    ),
+    ("paginator", PUBLIC_PAGINATOR),
+    ("tile_grids", PUBLIC_GRID_SELECTOR),
+    ("tile_roots", PUBLIC_TILE_ROOT_SELECTOR),
+    ("product_anchors", PUBLIC_ANCHOR_SELECTOR),
     ("title_spans", PUBLIC_TILE_SELECTOR),
 )
 
 
-@dataclass
+@dataclass(eq=False)
 class _Node:
     tag: str
     attrs: dict[str, str]
@@ -76,10 +70,12 @@ def _tiles(root: _Node) -> list[_Node]:
     for paginator in _walk(root):
         if paginator.tag != "div" or paginator.attrs.get("data-widget") != "infiniteVirtualPaginator":
             continue
-        for grid in _walk(paginator):
-            if grid.tag != "div" or not _has_class(grid, "tileGridDesktop"):
+        for grid in _walk(paginator)[1:]:
+            if grid.tag != "div" or not (
+                _has_class(grid, "tileGridDesktop") or grid.attrs.get("data-widget") == "tileGridDesktop"
+            ):
                 continue
-            tiles.extend(node for node in _walk(grid) if _is_tile(node))
+            tiles.extend(node for node in _walk(grid)[1:] if _is_tile(node) and all(node is not old for old in tiles))
     return tiles
 
 
@@ -95,7 +91,11 @@ def _tile_product(tile: _Node) -> PublicProduct | None:
         return None
     url = next(iter(urls))
     sku = next(iter(skus))
-    return PublicProduct(sku=sku, url=url, title=_title(tile, sku), displayed_price=_displayed_price(tile))
+    title, price = _title(tile, sku), _displayed_price(tile)
+
+    if title is None or price is None or to_kopecks(price) is None:
+        return None
+    return PublicProduct(sku=sku, url=url, title=title, displayed_price=price)
 
 
 def _product_links(tile: _Node) -> list[tuple[str, str]]:
@@ -103,7 +103,8 @@ def _product_links(tile: _Node) -> list[tuple[str, str]]:
     for node in _walk(tile):
         if node.tag != "a" or node.attrs.get("target") != "_blank":
             continue
-        identified = product_link(node.attrs.get("href", ""))
+        href = node.attrs.get("href", "")
+        identified = product_link(href) if href.startswith("/product/") else None
         if identified is not None:
             found.append(identified)
     return found
@@ -114,7 +115,8 @@ def _title(tile: _Node, sku: str) -> str | None:
     for node in _walk(tile):
         if node.tag != "a" or node.attrs.get("target") != "_blank":
             continue
-        identified = product_link(node.attrs.get("href", ""))
+        href = node.attrs.get("href", "")
+        identified = product_link(href) if href.startswith("/product/") else None
         if identified is None or identified[1] != sku:
             continue
         for span in _walk(node):
@@ -185,11 +187,22 @@ class _Tree(HTMLParser):
 
     def _start(self, tag: str, attrs: list[tuple[str, str | None]], *, void: bool) -> None:
         if self._skip:
-            self._skip.append(tag)
+            if not void:
+                self._skip.append(tag)
             return
         attr = {key: value or "" for key, value in attrs}
-        if tag in _SKIP_TAGS or "hidden" in attr:
-            self._skip.append(tag)
+        if (
+            tag in _SKIP_TAGS
+            or "hidden" in attr
+            or attr.get("aria-hidden") == "true"
+            or re.search(
+                r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\s*(?:;|$)",
+                attr.get("style", ""),
+                re.IGNORECASE,
+            )
+        ):
+            if not void:
+                self._skip.append(tag)
             return
         node = _Node(tag, attr, self._stack[-1])
         self._stack[-1].children.append(node)
