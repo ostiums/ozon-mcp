@@ -59,6 +59,7 @@ PUBLIC_PAGE_READER = """() => {
   }
   const selectors = [
     'div[data-widget="infiniteVirtualPaginator"]',
+    '[itemscope][itemtype$="/Product"]', '[itemscope][itemtype$="/Review"]',
     ...["webProductHeading", "webPrice", "webShortCharacteristics", "webCharacteristics",
         "webNutritionInfo", "webDescription", "webCurrentSeller", "webDelivery"]
       .map(name => 'div[data-widget="' + name + '"]')
@@ -78,8 +79,12 @@ PUBLIC_PAGE_READER = """() => {
     copy.querySelectorAll("script, style, noscript, template, iframe, [hidden]").forEach(n => n.remove());
     if (!copy.hidden) visible.appendChild(copy);
   }
+  const reviewLinks = [...document.querySelectorAll('a[rel~="next"], link[rel~="next"]')]
+    .filter(n => n.tagName === 'LINK' || (n.getClientRects().length &&
+        getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden'))
+    .map(n => n.getAttribute('href') || '');
   return { title: document.title || "", url: location.href, documentEpoch: performance.timeOrigin,
-           jsonLd, microdata, html: visible.innerHTML || "" };
+           jsonLd, microdata, reviewLinks, html: visible.innerHTML || "" };
 }"""
 
 # Owned-page state at a tile deadline. No markup, URL, cookies, or storage.

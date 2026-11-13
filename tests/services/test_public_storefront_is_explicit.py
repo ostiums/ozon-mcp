@@ -58,7 +58,7 @@ def test_public_product_keeps_only_the_requested_sku(monkeypatch: pytest.MonkeyP
     settings = OzonSettings(storefront="public")
     monkeypatch.setattr(public_catalog, "get_settings", lambda: settings)
     monkeypatch.setattr(public_catalog, "get_session", Session)
-    card = catalog.product_details("1600000001", with_description=True, with_reviews=True)
+    card = catalog.product_details("1600000001", with_description=True)
     assert card.sku == "1600000001"
     assert card.price == "2499"
     assert card.characteristics[0].name == "Белки"
