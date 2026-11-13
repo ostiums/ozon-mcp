@@ -1,0 +1,844 @@
+{
+  "webReviewProductScore-14003865-default-1": {
+    "totalScore": 5,
+    "reviewsCount": 810,
+    "score": [
+      {
+        "title": "5 звёзд",
+        "value": 773
+      },
+      {
+        "title": "4 звезды",
+        "value": 26
+      },
+      {
+        "title": "3 звезды",
+        "value": 3
+      },
+      {
+        "title": "2 звезды",
+        "value": 2
+      },
+      {
+        "title": "1 звезда",
+        "value": 6
+      }
+    ]
+  },
+  "webListReviews-5603940-default-1": {
+    "itemId": "507239415",
+    "requestedPath": "/product/507239415/reviews/",
+    "paging": {
+      "total": 810,
+      "commonTotal": 810,
+      "page": 1,
+      "perPage": 30,
+      "links": [
+        {
+          "text": "1",
+          "urlParams": ""
+        },
+        {
+          "text": "2",
+          "urlParams": "?page=2&page_key=CPbq9d4CEgsIkcKOqQYQsISENBgF&sort=usefulness_desc"
+        },
+        {
+          "text": "3",
+          "urlParams": "?page=3&page_key=CPbq9d4CEgsIkcKOqQYQsISENBgF&sort=usefulness_desc"
+        },
+        {
+          "text": "4",
+          "urlParams": "?page=4&page_key=CPbq9d4CEgsIkcKOqQYQsISENBgF&sort=usefulness_desc"
+        },
+        {
+          "text": "5",
+          "urlParams": "?page=5&page_key=CPbq9d4CEgsIkcKOqQYQsISENBgF&sort=usefulness_desc"
+        }
+      ],
+      "nextButton": "?page=2&page_key=CPbq9d4CEgsIkcKOqQYQsISENBgF&sort=usefulness_desc",
+      "prevButton": ""
+    },
+    "productScore": 5,
+    "products": {
+      "507239415": {
+        "variants": [
+          {
+            "name": "Количество в упаковке, шт",
+            "value": "4"
+          }
+        ]
+      },
+      "507246377": {
+        "variants": [
+          {
+            "name": "Количество в упаковке, шт",
+            "value": "2"
+          }
+        ]
+      }
+    },
+    "reviews": [
+      {
+        "uuid": "018e7fe0-3b76-0e2b-96ad-f667dc3dab9c",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Расул Х."
+        },
+        "content": {
+          "comment": "Очень хорошие фильтры, рекомендую к покупке. Очень хорошо очищают воду от различных примесей и служат ориентировочно 2.5+ месяца. При условиях: \n1) Мойка воздуха использовалась каждый день;\n2) каждые 2 недели очищали фильтры;\n3) с помощью специального фильтра для воды , вода очищалась от различных примесей , а после заливалась в мойку.",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-10/6b75d367-3afc-45a4-9c11-5ffceae2ce5e.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-6/de9e8424-1e6a-44cf-aeb1-b1783c33d32b.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1711542418,
+        "usefulness": {
+          "useful": 5,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 2
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c9b9f-1b1c-a5d2-ecf5-aacfa092c8d6",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Имя скрыто"
+        },
+        "content": {
+          "comment": "Приехал с мято-порванной коробкой, но сами фильтры целые.\nКачество вроде хорошее, но цена за пачку резанной бумаги конечно удивляет.",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-8/3489d478-4a8b-4a1b-a1c4-a1b911c8b163.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-9/6de75db1-bf4a-4fd5-88c7-e407a02052f1.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-9/05d92a83-571e-4cc4-9b4c-721b0ae906a2.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-8/659dc52b-46a5-4bc6-841d-df8dd8a5c7cb.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-10/094b95ba-0ae4-47f5-bbf9-6976f48a9783.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1703417973,
+        "usefulness": {
+          "useful": 3,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0197432c-3178-7892-9482-f209da7671ae",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Ранис Г."
+        },
+        "content": {
+          "comment": "Всё в порядке. Можно брать. Оригинал. Тщательно фильтруйте воду, либо пользуйтесь бутилированной, чтобы фильтры прослужили дольше.",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-12/1677da8b-fd16-402e-b8c0-9389d83e3e44.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1749178663,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018f51e4-74ea-cf2e-bc7f-fe9426c3cc54",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Екатерина К."
+        },
+        "content": {
+          "comment": "Супер фильтры, пользуюсь уже не первый раз. Рекомендую",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-10/f2a0ad05-30d3-4a4c-bc47-1e8465043f0e.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-10/7cda1d2a-3152-4d09-8c2b-018084357265.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1715065888,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c9309-4e08-95a0-702e-fad28aff0d3b",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Илья Т."
+        },
+        "content": {
+          "comment": "",
+          "positive": "Качество",
+          "negative": "Нет",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-7/4a6fe003-ebf5-48d7-9ac1-9b0cd602143f.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-6/739492a1-8cad-43ae-8a46-310a6be6569d.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1703273927,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019b2797-a1f2-7319-abed-34c34718ea48",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Эдуард А."
+        },
+        "content": {
+          "comment": "В зимний период без увлажнителя воздуха в квартире бывает непросто, поэтому постоянно используем девайс и фильтры нужно регулярно менять. По скидке получилось купить в этот раз.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1765895808,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019a342b-0070-710c-8a79-9f50c927fbf2",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Viktoriia B."
+        },
+        "content": {
+          "comment": "отличные!!! И главное ОРИГИНАЛЬНЫЕ!!! мы купили наш увлажнитель в Финляндии и сразу брали к нему запасные фильтры. Поэтому есть с чем сравнить ))) очень рекомендую!!!",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1761811826,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01956c2e-ec79-7e06-9d8f-aa06d1d716f0",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Дмитрий Д."
+        },
+        "content": {
+          "comment": "собственно не в первый раз. качество неизменное! не брал китайских аналогов и брать не хочу. Данное качество работает всю зиму без нареканий! Люблю фирму Stadler",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1741276772,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c784e-2ff3-f368-8366-705bc6e4a07d",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Имя скрыто"
+        },
+        "content": {
+          "comment": "",
+          "positive": "Много лет  пользуюсь увлажнителем Stadler Form Oskar со сменными фильтрами. Приобретаю только у официального продавца этих замечательных приборов. Хорошо, что осталось  представительство этой компании в нашей стране. С ними можно всегда связаться по имеющимся вопросам. При обращении  подробно консультируют по  вопросам  эксплуатации и приобретению сменных фильтров. Очень вежливые сотрудники! \n Внешний вид  увлажнителя  стильный, компактный, удобный в использовании. Нет эффекта парилки и белого осадка на мебели.  Имеется индикатор влажности и две скорости бесшумной работы вентилятора. Комплекта из четырех фильтров хватает на отопительный сезон по рекомендации фирмы, но порою обходились и  без их  смены, поскольку внешне оставались не загрязненными, только с лёгким желтоватым оттенком от воды. Арт.",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1706692469,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c20dd-250d-472e-47d6-99dedd7bf1d7",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Татьяна К."
+        },
+        "content": {
+          "comment": "Фильтры пришли в цивильной упаковке, без завалов, подошли идеально в увлажнитель. Заказала сразу 4 штуки, чтобы хватило дольше, использовала скидку и баллы от продавца. Спасибо!",
+          "positive": "Прекрасная упаковка, оперативность доставки",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1701358414,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0195a1f6-fd98-766d-818a-07637059a51d",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Дмитрий К."
+        },
+        "content": {
+          "comment": "Фильтруют, гадость из воды впитывают. Но стоят кучеряво. Но зато возни меньше с таким увлажнителем, чем с дисковым.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1742179074,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019385d8-68dc-71f3-91c4-bc25d2f4348c",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Алексей Ц"
+        },
+        "content": {
+          "comment": "ну что там, фильтр и фильтр, подошёл к этой х**** увлажняющей воздух. \nвсе норм, продавелло - красавелло",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1733117373,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01946ba0-ccb6-7e99-b9e8-8f9683b0188b",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Сергей Ш."
+        },
+        "content": {
+          "comment": "Без фильтров увлажнители не работают с нужной производительностью. В общем, к фильтрам нареканий нет.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1736972491,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c7845-e8a5-248b-acf5-25ad2a684632",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Тимофей М."
+        },
+        "content": {
+          "comment": "Редкая штука именно этой модели. найти достаточно сложно только на озоне можно найти",
+          "positive": "Качество",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1702824898,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019252f6-010a-7408-aec0-97e25d466df2",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Вадим З."
+        },
+        "content": {
+          "comment": "Все отлично, для Оскар, все подошло, плюсом дали скидку 1000, итого комплект вышел за 3200!",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1727968715,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018d4159-d9ef-4c74-e929-cac623849bdf",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Дмитрий Т."
+        },
+        "content": {
+          "comment": "Отличный фильтр, полностью оригинальный, с надписью на торце. Увлажняет как положено.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1706198426,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01988d60-ec35-7ed0-a790-f3f37e05c62f",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Ольга Ю."
+        },
+        "content": {
+          "comment": "Оригинал, буду брать еще, хорошая цена, еще баллы продавец начисляет отличные",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1754718597,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b75a6-cfd5-5095-f4f4-25a5a63bb480",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Имя скрыто"
+        },
+        "content": {
+          "comment": "",
+          "positive": "Фильтруют хорошо.",
+          "negative": "На отопительный период надо 2 комплекта. Выходит дороговато ",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1698486262,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0199cd6b-9aa2-7ce9-bf56-7420db2fcd40",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Имя скрыто"
+        },
+        "content": {
+          "comment": "Фильтры как фильтры. Стоят дорого, но альтернатив нет. Вроде оригинальные.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1760088006,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01977f04-5481-7a8c-b7aa-4ada16b938de",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Алла К."
+        },
+        "content": {
+          "comment": "Отличные фильтры, хватают на весь отопительный сезон с октября по май.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1750184707,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018f96b1-ec25-748a-6481-4f5df3a77d81",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Евгений Я."
+        },
+        "content": {
+          "comment": "Отличные картриджи, но цена это что то с чем то, тянем до последнего 😅",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1716220197,
+        "usefulness": {
+          "useful": 2,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018dc1f5-b032-d819-3df8-d99a7b1119a7",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Елена К."
+        },
+        "content": {
+          "comment": "",
+          "positive": "Упакованы хорошо, пришли быстро, заказала на следующий сезон в запас",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1708356122,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019996f9-eda0-72a9-8349-979a38f84527",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Максим Б."
+        },
+        "content": {
+          "comment": "Фильтра нормальные, продавец порядочный и ответственный. Спасибо.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1759174596,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018f67f5-8e75-e1a0-ae2f-d6295e2c6bc0",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Олег Л."
+        },
+        "content": {
+          "comment": "Все как всегда оригинальное качество свежий воздух после замены",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1715436099,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0191f469-62c9-784a-99bc-910e0f829edf",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Вильчинская Ирина"
+        },
+        "content": {
+          "comment": "Хватает на 1,5 месяца.",
+          "positive": "Родные фильтры для SF Oskar 2015 года.",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1726382434,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0196387d-0d0a-7602-8945-a834083cb3bb",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Александр Ф."
+        },
+        "content": {
+          "comment": "Дышать ночью в спальном районе возле мкада стало приятнее",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1744704442,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019007a4-4a3a-0047-286d-f9bc23395347",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Кирилл К."
+        },
+        "content": {
+          "comment": "Всё ок, буду брать ещё на замену",
+          "positive": "Оригинальные фильтры",
+          "negative": "Нету",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1718115130,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c1aae-1adb-ba95-7395-fedbebac9bae",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Юлия Я."
+        },
+        "content": {
+          "comment": "",
+          "positive": "Фильтр подошел отлично! Увлажнитель снова нас радует",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1701254669,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0196fe32-5ab5-7ca9-8308-a0f5a299a900",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Мария К."
+        },
+        "content": {
+          "comment": "Не могу ничего плохого сказать, функционал выполняют!👍",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1748021436,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019398aa-8309-745e-9556-7f40587122b0",
+        "itemId": "507239415",
+        "author": {
+          "firstName": "Дмитрий К."
+        },
+        "content": {
+          "comment": "вроде пока работают... а вот хорошо ль, время покажет.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1733433133,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      }
+    ]
+  }
+}

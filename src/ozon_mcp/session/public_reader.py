@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlsplit
 from playwright.async_api import Error as PlaywrightError, Page
 
 from ozon_mcp.errors import OzonError
+from ozon_mcp.parsing.public_reviews import NO_REVIEWS_SUBTITLE, NO_REVIEWS_TITLE, review_link, review_urls_match
 from ozon_mcp.parsing.public_storefront import (
     PUBLIC_PAGE_READER,
     format_public_diagnostics,
@@ -48,7 +49,7 @@ def matches_public_url(actual: str, requested: str) -> bool:
         return False
     if target.path.startswith("/product/"):
         a, b = product_link(actual), product_link(requested)
-        return bool(a and b and a[1] == b[1])
+        return review_urls_match(actual, requested) if review_link(requested) else bool(a and b and a[1] == b[1])
     if not (target.path.rstrip("/") == "/search" or target.path.startswith("/category/")):
         return False
     # These documents are not search results, even if they recommend products.
@@ -78,11 +79,47 @@ READINESS = (
      getComputedStyle(n).visibility !== 'hidden' && getComputedStyle(n).display !== 'none';
  const tiles = [...document.querySelectorAll(TITLE)].some(visible);
  const product = [...document.querySelectorAll(PRODUCT)].some(visible);
+ const reviewSchema = node => {
+     if (!node || typeof node !== 'object') return false;
+     if (Array.isArray(node)) return node.some(reviewSchema);
+     const types = [].concat(node['@type'] || []).map(t => String(t).split('/').pop());
+     if (types.includes('Review')) return true;
+     if (types.includes('Product') &&
+         ([].concat(node.review || []).length || String(node.aggregateRating?.reviewCount) === '0')) return true;
+     return reviewSchema(node['@graph']);
+ };
+ const reviewWidgets = [...document.querySelectorAll(
+     'div.client-state [id^="state-webListReviews-"][data-state]')].some(n => {
+       try {
+         const state = JSON.parse(n.getAttribute('data-state'));
+         return Array.isArray(state?.reviews) && (state.reviews.length > 0 || state.paging?.total === 0 ||
+           [...document.querySelectorAll(
+             'div.client-state [id^="state-webReviewProductScore-"][data-state]')].some(score => {
+               try { return JSON.parse(score.getAttribute('data-state'))?.reviewsCount === 0; }
+               catch { return false; }
+             }));
+       } catch { return false; }
+     });
+ const noReviews = [...document.querySelectorAll('div.client-state [id^="state-error-"][data-state]')].some(n => {
+     try {
+         const state = JSON.parse(n.getAttribute('data-state'));
+         return state?.title === NO_REVIEWS_TITLE && state?.subtitle === NO_REVIEWS_SUBTITLE;
+     } catch { return false; }
+ });
+ const reviews = noReviews || reviewWidgets ||
+     [...document.querySelectorAll('[itemscope][itemtype$="/Review"]')].some(visible) ||
+     [...document.querySelectorAll('[itemscope][itemtype$="/Product"] [itemprop="reviewCount"]')]
+       .some(n => (n.getAttribute('content') || n.textContent || '').trim() === '0') ||
+     [...document.querySelectorAll('script[type="application/ld+json"]')].some(n => {
+       try { return reviewSchema(JSON.parse(n.textContent || '')); } catch { return false; }
+     });
  const empty = !tiles && !product && [...document.querySelectorAll('h1,h2,h3,p,span')].some(n =>
      visible(n) && EMPTY.some(phrase => (n.textContent || '').trim().toLowerCase() === phrase));
  return {title: document.title || '', url: location.href, documentEpoch: performance.timeOrigin,
-     tile_ready: tiles, product_ready: product, explicit_empty: empty};
+     tile_ready: tiles, product_ready: product, review_ready: reviews, explicit_empty: empty};
 }"""
+    .replace("NO_REVIEWS_TITLE", json.dumps(NO_REVIEWS_TITLE))
+    .replace("NO_REVIEWS_SUBTITLE", json.dumps(NO_REVIEWS_SUBTITLE))
     .replace("TITLE", json.dumps(PUBLIC_TILE_SELECTOR))
     .replace("PRODUCT", json.dumps(PUBLIC_PRODUCT_SELECTOR))
     .replace("EMPTY", json.dumps(EMPTY_RESULT_PHRASES))
@@ -205,7 +242,10 @@ class _PublicRead:
         except RuntimeError as exc:
             raise OzonError(str(exc)) from None  # Only the fixed safe title classifier.
         product = urlsplit(self.url).path.startswith("/product/")
-        self.ready = bool(self.sample.get("product_ready" if product else "tile_ready"))
+        ready_key = (
+            "review_ready" if review_link(self.url) is not None else "product_ready" if product else "tile_ready"
+        )
+        self.ready = bool(self.sample.get(ready_key))
         return bool(self.ready or (not product and self.sample.get("explicit_empty"))) and matches_public_url(
             self.sample.get("url", ""), self.url
         )

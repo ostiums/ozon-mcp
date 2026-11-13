@@ -36,6 +36,7 @@ from ozon_mcp.services.public_catalog import (
     product_public,
     public_storefront_enabled,
     require_composer,
+    reviews_public,
     search_public,
 )
 from ozon_mcp.utils.money import to_kopecks
@@ -180,9 +181,10 @@ def product_details(
     """
     sku = _sku(sku_or_url)
     if public_storefront_enabled():
-        # Description and reviews are included only when the public page declared
-        # them. Composer endpoints are not called as a fallback.
-        return product_public(sku)
+        card = product_public(sku)
+        if with_reviews:
+            card.reviews = get_reviews(sku)
+        return card
     card = parse.parse_product(get_session().fetch(f"/product/{sku}/"))
     # The card is asked for by sku, so that is the sku it has — the page does not
     # always repeat it, and answering None for what the caller just passed in is
@@ -214,8 +216,9 @@ def get_reviews(sku_or_url: str, limit: int = 30, sort: str = "useful") -> Revie
     A card's reviews cover its variants, so a review may be about another size or
     colour; each one says which.
     """
-    require_composer("get_reviews")
     sku = _sku(sku_or_url)
+    if public_storefront_enabled():
+        return reviews_public(sku, limit, sort)
     session = get_session()
     path = f"/product/{sku}/reviews/?sort={REVIEW_SORTS.get(sort, sort)}"
     data = session.fetch(path)

@@ -1,12 +1,14 @@
 """Explicit public-storefront reads. Composer stays the default elsewhere."""
 
+import re
 from urllib.parse import quote
 
-from ozon_mcp.constants import SEARCH_SORTS
+from ozon_mcp.constants import REVIEW_SORTS, SEARCH_SORTS
 from ozon_mcp.dependencies import get_session
 from ozon_mcp.errors import OzonError
-from ozon_mcp.models.catalog import DeliveryEstimate, OwnedSearchProbe, ProductCard, Tile
+from ozon_mcp.models.catalog import DeliveryEstimate, OwnedSearchProbe, ProductCard, Reviews, Tile
 from ozon_mcp.parsing.public_delivery import delivery_from_document
+from ozon_mcp.parsing.public_reviews import PublicReviewCollection, review_urls_match, reviews_from_document
 from ozon_mcp.parsing.public_storefront import (
     PublicProduct,
     format_public_diagnostics,
@@ -184,3 +186,42 @@ def delivery_public(sku: str) -> DeliveryEstimate:
     if not products or len(products) != 1 or products[0].sku != sku:
         raise OzonError("Public delivery page did not declare the requested SKU.")
     return DeliveryEstimate(sku=sku, delivery=delivery_from_document(document))
+
+
+def reviews_public(sku: str, limit: int, sort: str) -> Reviews:
+    """Walk public review pages using declared widgets or schema.org reviews."""
+    if limit < 1 or re.fullmatch(r"[0-9]{6,}", sku) is None:
+        raise OzonError("Public reviews need a numeric SKU and a positive limit.")
+    if sort not in REVIEW_SORTS:
+        raise OzonError("Public reviews sort must be useful, best, or worst.")
+    path = f"/product/{sku}/reviews/?sort={REVIEW_SORTS[sort]}"
+    answer = Reviews()
+    collected = PublicReviewCollection()
+    visited: set[str] = set()
+    session = get_session()
+    for _ in range(40):
+        visited.add(path)
+        document = session.read_public_page(path)
+        if not review_urls_match(str(document.get("url") or ""), "https://www.ozon.ru" + path):
+            raise OzonError("Public reviews page changed the requested product, page, or sort.")
+        page = reviews_from_document(document, sku)
+        if page is None:
+            raise OzonError(
+                "Public reviews page has no readable widget state or schema.org reviews for this product. "
+                "This is not an empty result. No composer fallback was attempted."
+            )
+        answer.count = answer.count if answer.count is not None else page.answer.count
+        answer.score = answer.score if answer.score is not None else page.answer.score
+        if not answer.distribution:
+            answer.distribution = page.answer.distribution
+        fresh = 0
+        for identifier, review in zip(page.review_ids, page.answer.reviews, strict=True):
+            if collected.add(review, identifier):
+                fresh += 1
+        if len(collected.reviews) >= limit or not fresh or not page.next_path or page.next_path in visited:
+            break
+        path = page.next_path
+    answer.reviews = collected.reviews[:limit]
+    answer.fetched = len(answer.reviews)
+    answer.photos = list(dict.fromkeys(photo for review in answer.reviews for photo in review.photos))
+    return answer
