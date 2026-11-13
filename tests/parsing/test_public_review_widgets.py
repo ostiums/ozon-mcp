@@ -100,3 +100,46 @@ def test_widget_reviews_cannot_have_zero_count() -> None:
     states[SCORE]["reviewsCount"] = 0
     with pytest.raises(OzonError, match="zero review count"):
         reviews_from_document(document(states), SKU)
+
+
+def test_no_reviews_error_declaration_returns_empty() -> None:
+    result = reviews_from_document(
+        document({
+            "error-3036935-default-1": {
+                "title": "Такой страницы не существует",
+                "subtitle": "потому что у товара нет отзывов",
+            },
+        }),
+        SKU,
+    )
+    assert result is not None
+    assert result.answer.score is None
+    assert result.answer.count == result.answer.fetched == 0
+    assert result.answer.reviews == []
+    assert result.next_path is None
+    assert result.review_ids == []
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"title": "Такой страницы не существует"},
+        {"subtitle": "потому что у товара нет отзывов"},
+        {"title": "Ошибка", "subtitle": "потому что у товара нет отзывов"},
+        {"title": "Такой страницы не существует", "subtitle": "потому что товар удалён"},
+        {"title": "Такой страницы не существует", "subtitle": ["потому что у товара нет отзывов"]},
+        {"title": ["Такой страницы не существует"], "subtitle": "потому что у товара нет отзывов"},
+        {"title": "Такой страницы не существует", "subtitle": "потому что у товара нет отзывов ещё"},
+        None,
+        [],
+        "not json",
+    ],
+)
+def test_other_error_declarations_are_not_empty_reviews(state: Any) -> None:
+    assert reviews_from_document(document({"error-3036935-default-1": state}), SKU) is None
+
+
+@pytest.mark.parametrize("name", ["banner-3036935-default-1", "errorBanner-3036935-default-1"])
+def test_no_reviews_words_in_unrelated_state_are_not_empty_reviews(name: str) -> None:
+    state = {"title": "Такой страницы не существует", "subtitle": "потому что у товара нет отзывов"}
+    assert reviews_from_document(document({name: state}), SKU) is None

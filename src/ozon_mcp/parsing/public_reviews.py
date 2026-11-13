@@ -12,12 +12,14 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 from ozon_mcp.errors import OzonError
 from ozon_mcp.models.catalog import Review, Reviews
 from ozon_mcp.parsing.catalog import parse_reviews, reviews_next_page
-from ozon_mcp.parsing.common import widget
+from ozon_mcp.parsing.common import widget, widgets_all
 from ozon_mcp.parsing.public_storefront import _json_nodes, product_link
 from ozon_mcp.parsing.visible_cards import _Node, _parse, _text, _walk
 
 _ORIGIN = "https://www.ozon.ru"
 _REVIEW_PATH = re.compile(r"/product/(?:[a-z0-9-]*-)?(\d{6,})/reviews/?$")
+NO_REVIEWS_TITLE = "Такой страницы не существует"
+NO_REVIEWS_SUBTITLE = "потому что у товара нет отзывов"
 
 
 @dataclass
@@ -103,7 +105,7 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
     count = _unique([_integer(item.get("reviewCount")) for item in aggregates])
     score = _unique([_rating(item, integer=False) for item in aggregates])
     if not reviews and count != 0:
-        return None
+        return PublicReviewPage(answer=Reviews(count=0), next_path=None) if _declares_no_reviews(document) else None
     if reviews and count == 0:
         raise OzonError("Public review declarations conflict with their zero review count.")
     return PublicReviewPage(
@@ -116,6 +118,17 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
         ),
         next_path=_next_path(root, document.get("reviewLinks"), identity[0], sku),
         review_ids=collected.identifiers,
+    )
+
+
+def _declares_no_reviews(document: dict[str, Any]) -> bool:
+    if not isinstance(document.get("widgetStates"), dict):
+        return False
+    return any(
+        isinstance(state, dict)
+        and state.get("title") == NO_REVIEWS_TITLE
+        and state.get("subtitle") == NO_REVIEWS_SUBTITLE
+        for state in widgets_all(document, "error-")
     )
 
 

@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlsplit
 from playwright.async_api import Error as PlaywrightError, Page
 
 from ozon_mcp.errors import OzonError
-from ozon_mcp.parsing.public_reviews import review_link, review_urls_match
+from ozon_mcp.parsing.public_reviews import NO_REVIEWS_SUBTITLE, NO_REVIEWS_TITLE, review_link, review_urls_match
 from ozon_mcp.parsing.public_storefront import (
     PUBLIC_PAGE_READER,
     format_public_diagnostics,
@@ -100,7 +100,14 @@ READINESS = (
              }));
        } catch { return false; }
      });
- const reviews = reviewWidgets || [...document.querySelectorAll('[itemscope][itemtype$="/Review"]')].some(visible) ||
+ const noReviews = [...document.querySelectorAll('div.client-state [id^="state-error-"][data-state]')].some(n => {
+     try {
+         const state = JSON.parse(n.getAttribute('data-state'));
+         return state?.title === NO_REVIEWS_TITLE && state?.subtitle === NO_REVIEWS_SUBTITLE;
+     } catch { return false; }
+ });
+ const reviews = noReviews || reviewWidgets ||
+     [...document.querySelectorAll('[itemscope][itemtype$="/Review"]')].some(visible) ||
      [...document.querySelectorAll('[itemscope][itemtype$="/Product"] [itemprop="reviewCount"]')]
        .some(n => (n.getAttribute('content') || n.textContent || '').trim() === '0') ||
      [...document.querySelectorAll('script[type="application/ld+json"]')].some(n => {
@@ -111,6 +118,8 @@ READINESS = (
  return {title: document.title || '', url: location.href, documentEpoch: performance.timeOrigin,
      tile_ready: tiles, product_ready: product, review_ready: reviews, explicit_empty: empty};
 }"""
+    .replace("NO_REVIEWS_TITLE", json.dumps(NO_REVIEWS_TITLE))
+    .replace("NO_REVIEWS_SUBTITLE", json.dumps(NO_REVIEWS_SUBTITLE))
     .replace("TITLE", json.dumps(PUBLIC_TILE_SELECTOR))
     .replace("PRODUCT", json.dumps(PUBLIC_PRODUCT_SELECTOR))
     .replace("EMPTY", json.dumps(EMPTY_RESULT_PHRASES))
