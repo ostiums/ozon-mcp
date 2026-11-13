@@ -114,10 +114,11 @@ async def get_reviews(sku_or_url: SkuOrUrl, limit: Limit = 30, sort: ReviewSort 
     `distribution` per star, and `limit` reviews with `fetched` saying how many
     came back. count and fetched are different numbers: reporting the second as
     the first turns 155 847 reviews into 30.
-    Public mode reads schema.org reviews from the public review page and follows
-    its declared next links up to 40 pages. Missing scalar fields stay null and
-    missing collections stay empty. Unreadable pages and antibot blocks raise errors, with no composer
-    fallback. Live public review markup compatibility remains unverified.
+    Public mode reads declared review widget states with schema.org fallback
+    and follows declared next links up to 40 pages. An explicit no-reviews
+    declaration returns an empty result. Missing scalar fields stay null and
+    missing collections stay empty. Unreadable pages and antibot blocks raise
+    errors, with no composer fallback.
     In composer mode, reviews arrive thirty at a time and pages are walked to meet `limit`. There
     is no filter by star, so the one-star ones are reached with sort="worst" plus
     enough depth.

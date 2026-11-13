@@ -1,4 +1,4 @@
-"""Real browser extraction from synthetic public pages with all network intercepted."""
+"""Real browser extraction from public page fixtures with all network intercepted."""
 
 from __future__ import annotations
 
