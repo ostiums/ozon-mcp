@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 from ozon_mcp.errors import OzonError
 from ozon_mcp.services import catalog, public_catalog
 from ozon_mcp.session import transport
-from ozon_mcp.session.public_reader import matches_public_url
+from ozon_mcp.session.public_reader import READINESS, matches_public_url
 from ozon_mcp.session.transport import OzonSession
 from ozon_mcp.settings import OzonSettings
 from review_fixtures import review_markup, review_states
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 URL = "https://www.ozon.ru/product/2859492815/reviews/?sort=usefulness_desc"
 FIXTURE = Path("tests/fixtures/public-reviews-schema.html").read_text(encoding="utf-8")
+NO_REVIEWS = Path("tests/fixtures/public-reviews-no-reviews.html").read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -221,3 +222,57 @@ def test_browser_malformed_widgets_fall_back_to_schema(browser_session: Any) -> 
     )
     result = catalog.get_reviews("2859492815", limit=1)
     assert result.reviews[0].text == "Хороший товар"
+
+
+def test_browser_captured_no_reviews_state_is_ready_immediately(browser_session: Any) -> None:
+    page, _ = browser_session
+    page.set_content(NO_REVIEWS)
+    assert page.evaluate(READINESS)["review_ready"] is True
+
+
+def test_browser_captured_no_reviews_returns_empty_without_timeout(browser_session: Any) -> None:
+    page, requests = browser_session
+
+    def respond(route: Any) -> None:
+        requests.append(route.request.url)
+        route.fulfill(status=200, content_type="text/html", body=NO_REVIEWS)
+
+    page.route("**/*", respond)
+    result = catalog.get_reviews("5745227761")
+    assert result.score is None
+    assert result.count == result.fetched == 0
+    assert result.reviews == []
+    assert result.photos == []
+    assert requests == ["https://www.ozon.ru/product/5745227761/reviews/?sort=usefulness_desc"]
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        NO_REVIEWS.replace("data-state=", "data-unreadable-state="),
+        NO_REVIEWS.replace("потому что у товара нет отзывов", "потому что товар удалён"),
+        NO_REVIEWS.replace('data-state="', 'data-state="broken'),
+        NO_REVIEWS.replace("state-error-", "state-banner-"),
+    ],
+    ids=["visible-words-only", "other-error", "malformed-state", "unrelated-state"],
+)
+def test_browser_no_reviews_needs_exact_error_declaration(browser_session: Any, markup: str) -> None:
+    page, _ = browser_session
+    page.route("**/*", lambda route: route.fulfill(status=200, content_type="text/html", body=markup))
+    with pytest.raises(OzonError, match="not an empty result"):
+        catalog.get_reviews("5745227761")
+    assert page.evaluate(READINESS)["review_ready"] is False
+
+
+def test_browser_no_reviews_state_does_not_override_antibot(browser_session: Any) -> None:
+    page, _ = browser_session
+    page.route(
+        "**/*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=NO_REVIEWS.replace("<title>OZON</title>", "<title>Antibot challenge</title>"),
+        ),
+    )
+    with pytest.raises(OzonError, match="antibot"):
+        catalog.get_reviews("5745227761")

@@ -13,3 +13,5 @@ The original artifacts are in `/workspace/codex-ozon-reviews/inspect/fixtures/`,
 | 507239415 | 5.0 | 810 | 30 | Declared |
 
 `tests/review_fixtures.py` renders these states as escaped `data-state` attributes inside a hidden client-state container. Browser tests intercept every request. Pagination tests split the first capture into two pages with one overlapping review and retain its declared next-page query. They verify navigation and deduplication, but do not claim a live page-two capture.
+
+`public-reviews-no-reviews.html` retains the exact error widget and `state-error-3036935-default-1` declaration from `/workspace/codex-ozon-reviews/inspect/5745227761-failed.html`, captured on 2026-11-13. It keeps the document title `OZON` and the hidden `div.client-state` container. Scripts, styles, navigation, account state, and unrelated widgets are omitted. The error declares `Такой страницы не существует` with subtitle `потому что у товара нет отзывов`. Browser tests serve this fixture as HTTP 200 with every request intercepted.
