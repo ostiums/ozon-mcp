@@ -16,6 +16,6 @@ def review_markup(states: dict[str, Any]) -> str:
         for key, value in states.items()
     )
     return (
-        '<title>Отзывы о товаре</title><div data-widget="webListReviews"></div>'
+        '<meta charset="utf-8"><title>Отзывы о товаре</title><div data-widget="webListReviews"></div>'
         f'<div class="client-state" style="display:none">{nodes}</div>'
     )

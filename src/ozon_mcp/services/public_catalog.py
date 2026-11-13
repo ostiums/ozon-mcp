@@ -189,7 +189,7 @@ def delivery_public(sku: str) -> DeliveryEstimate:
 
 
 def reviews_public(sku: str, limit: int, sort: str) -> Reviews:
-    """Walk declared public review links, reading schema.org review fields."""
+    """Walk public review pages using declared widgets or schema.org reviews."""
     if limit < 1 or re.fullmatch(r"[0-9]{6,}", sku) is None:
         raise OzonError("Public reviews need a numeric SKU and a positive limit.")
     if sort not in REVIEW_SORTS:
@@ -207,11 +207,13 @@ def reviews_public(sku: str, limit: int, sort: str) -> Reviews:
         page = reviews_from_document(document, sku)
         if page is None:
             raise OzonError(
-                "Public reviews page has no readable schema.org reviews for this product. "
+                "Public reviews page has no readable widget state or schema.org reviews for this product. "
                 "This is not an empty result. No composer fallback was attempted."
             )
         answer.count = answer.count if answer.count is not None else page.answer.count
         answer.score = answer.score if answer.score is not None else page.answer.score
+        if not answer.distribution:
+            answer.distribution = page.answer.distribution
         fresh = 0
         for identifier, review in zip(page.review_ids, page.answer.reviews, strict=True):
             if collected.add(review, identifier):

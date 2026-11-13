@@ -1,8 +1,4 @@
-"""Public schema.org review declarations and their same-product next links.
-
-Live review markup was unavailable during development. This parser accepts
-JSON-LD and semantic microdata, not unverified Ozon classes or widget state.
-"""
+"""Public DOM review widget states, schema.org fallback, and same-product next links."""
 
 from __future__ import annotations
 
@@ -15,6 +11,8 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 from ozon_mcp.errors import OzonError
 from ozon_mcp.models.catalog import Review, Reviews
+from ozon_mcp.parsing.catalog import parse_reviews, reviews_next_page
+from ozon_mcp.parsing.common import widget
 from ozon_mcp.parsing.public_storefront import _json_nodes, product_link
 from ozon_mcp.parsing.visible_cards import _Node, _parse, _text, _walk
 
@@ -80,6 +78,9 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
     identity = review_link(str(document.get("url") or ""))
     if identity is None or identity[1] != sku:
         return None
+    page = _widget_reviews(document, identity[0], sku)
+    if page is not None:
+        return page
     nodes = [node for block in document.get("jsonLd") or [] if isinstance(block, str) for node in _json_nodes(block)]
     root = _parse(str(document.get("html") or ""))
     nodes.extend(
@@ -115,6 +116,41 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
         ),
         next_path=_next_path(root, document.get("reviewLinks"), identity[0], sku),
         review_ids=collected.identifiers,
+    )
+
+
+def _widget_reviews(document: dict[str, Any], current: str, sku: str) -> PublicReviewPage | None:
+    states = document.get("widgetStates")
+    if not isinstance(states, dict):
+        return None
+    data = {"widgetStates": states}
+    listing = widget(data, "webListReviews")
+    if not isinstance(listing, dict) or not isinstance(listing.get("reviews"), list):
+        return None
+    if listing.get("itemId") is not None and str(listing["itemId"]) != sku:
+        raise OzonError("Public review widget declares a different product.")
+    if listing.get("requestedPath") is not None:
+        declared = review_link(str(listing["requestedPath"]))
+        if declared is None or declared[1] != sku:
+            raise OzonError("Public review widget declares a different product route.")
+    try:
+        answer = parse_reviews(data)
+    except (AttributeError, TypeError, ValueError, OverflowError, OSError):
+        return None
+    if not answer.reviews and answer.count != 0:
+        return None
+    if answer.reviews and not any(
+        review.score is not None or review.text or review.positive or review.negative or review.photos
+        for review in answer.reviews
+    ):
+        return None
+    if answer.reviews and answer.count == 0:
+        raise OzonError("Public review declarations conflict with their zero review count.")
+    following = reviews_next_page(data)
+    return PublicReviewPage(
+        answer=answer,
+        next_path=_checked_next_path([following] if following else [], current, sku),
+        review_ids=[_string(row.get("uuid")) for row in listing["reviews"] if isinstance(row, dict)],
     )
 
 
@@ -294,6 +330,10 @@ def _next_path(root: _Node, declared: object, current: str, sku: str) -> str | N
         if node.tag in {"a", "link"} and "next" in node.attrs.get("rel", "").split()
     ]
     links.extend(link for link in _list(declared) if isinstance(link, str))
+    return _checked_next_path(links, current, sku)
+
+
+def _checked_next_path(links: list[str], current: str, sku: str) -> str | None:
     paths: set[str] = set()
     current_sort = parse_qs(urlsplit(current).query).get("sort")
     for href in links:

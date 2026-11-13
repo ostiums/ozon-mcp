@@ -1,9 +1,9 @@
-"""Read a public Ozon page from schema.org data the page already rendered.
+"""Read schema.org declarations and inspected widgets from a public Ozon page.
 
 Schema.org and inspected public DOM widgets are accepted. A price is kept only when
 it belongs to the same product. Missing title, price, variants or nutrition
 stay missing. This parser does not call an API and does not invent fields.
-DOM fixtures were inspected on 2026-11-10.
+Product DOM fixtures were inspected on 2026-11-10, review widgets on 2026-11-13.
 """
 
 from __future__ import annotations
@@ -83,8 +83,13 @@ PUBLIC_PAGE_READER = """() => {
     .filter(n => n.tagName === 'LINK' || (n.getClientRects().length &&
         getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden'))
     .map(n => n.getAttribute('href') || '');
+  const widgetStates = Object.fromEntries(
+    [...document.querySelectorAll('div.client-state [id^="state-"][data-state]')]
+      .filter(n => /^(state-webListReviews-|state-webReviewProductScore-)/.test(n.id))
+      .map(n => [n.id.slice(6), n.getAttribute('data-state')])
+  );
   return { title: document.title || "", url: location.href, documentEpoch: performance.timeOrigin,
-           jsonLd, microdata, reviewLinks, html: visible.innerHTML || "" };
+           jsonLd, microdata, reviewLinks, widgetStates, html: visible.innerHTML || "" };
 }"""
 
 # Owned-page state at a tile deadline. No markup, URL, cookies, or storage.

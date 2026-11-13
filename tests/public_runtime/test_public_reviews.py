@@ -122,6 +122,7 @@ def test_review_reader_accepts_canonical_slug_with_requested_query() -> None:
 )
 def test_browser_reads_captured_client_state_reviews(
     browser_session: Any,
+    *,
     sku: str,
     score: float,
     count: int,
@@ -187,3 +188,36 @@ def test_browser_follows_captured_widget_paging(browser_session: Any, limit: int
         row["author"]["firstName"]
         for row in review_states(sku)["webListReviews-5603940-default-1"]["reviews"][:fetched]
     ]
+
+
+@pytest.mark.parametrize("count", [0, 12])
+def test_browser_empty_widgets_require_zero_count(browser_session: Any, count: int) -> None:
+    page, _ = browser_session
+    states = {
+        "webListReviews-5603940-default-1": {"reviews": []},
+        "webReviewProductScore-14003865-default-1": {"reviewsCount": count},
+    }
+    page.route(
+        "**/*",
+        lambda route: route.fulfill(status=200, content_type="text/html", body=review_markup(states)),
+    )
+    if count == 0:
+        result = catalog.get_reviews("185618681")
+        assert result.fetched == result.count == 0
+    else:
+        with pytest.raises(OzonError, match="not an empty result"):
+            catalog.get_reviews("185618681")
+
+
+def test_browser_malformed_widgets_fall_back_to_schema(browser_session: Any) -> None:
+    page, _ = browser_session
+    page.route(
+        "**/*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=FIXTURE + review_markup({"webListReviews-5603940-default-1": {"reviews": [{}]}}),
+        ),
+    )
+    result = catalog.get_reviews("2859492815", limit=1)
+    assert result.reviews[0].text == "Хороший товар"
