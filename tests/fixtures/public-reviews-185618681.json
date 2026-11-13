@@ -1,0 +1,871 @@
+{
+  "webListReviews-5603940-default-1": {
+    "itemId": "185618681",
+    "requestedPath": "/product/185618681/reviews/",
+    "paging": {
+      "total": 398,
+      "commonTotal": 398,
+      "page": 1,
+      "perPage": 30,
+      "links": [
+        {
+          "text": "1",
+          "urlParams": ""
+        },
+        {
+          "text": "2",
+          "urlParams": "?page=2&page_key=CPy23UQSDAjwiemPBhDIx8q1AxgF&sort=usefulness_desc"
+        },
+        {
+          "text": "3",
+          "urlParams": "?page=3&page_key=CPy23UQSDAjwiemPBhDIx8q1AxgF&sort=usefulness_desc"
+        },
+        {
+          "text": "4",
+          "urlParams": "?page=4&page_key=CPy23UQSDAjwiemPBhDIx8q1AxgF&sort=usefulness_desc"
+        },
+        {
+          "text": "5",
+          "urlParams": "?page=5&page_key=CPy23UQSDAjwiemPBhDIx8q1AxgF&sort=usefulness_desc"
+        }
+      ],
+      "nextButton": "?page=2&page_key=CPy23UQSDAjwiemPBhDIx8q1AxgF&sort=usefulness_desc",
+      "prevButton": ""
+    },
+    "productScore": 4.9,
+    "products": {
+      "185618670": {
+        "variants": [
+          {
+            "name": "Вкусовой акцент (вкус)",
+            "value": "Шоколад"
+          }
+        ]
+      },
+      "185618681": {
+        "variants": [
+          {
+            "name": "Вкусовой акцент (вкус)",
+            "value": "Клубника"
+          }
+        ]
+      },
+      "185618682": {
+        "variants": [
+          {
+            "name": "Вкусовой акцент (вкус)",
+            "value": "Банан"
+          }
+        ]
+      },
+      "185618689": {
+        "variants": [
+          {
+            "name": "Вкусовой акцент (вкус)",
+            "value": "Ваниль"
+          }
+        ]
+      }
+    },
+    "reviews": [
+      {
+        "uuid": "018a9f7c-4089-2ebd-61f3-be50ce1bf58e",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Андрей п."
+        },
+        "content": {
+          "comment": "Продукт рекомендую. При растворении в воде протеин достаточно жидкий и в меру сладкий, хорошо пьётся и придаёт чувство насыщения. ",
+          "positive": "Вкус приятный, не приторный. Банка компактных размеров. Удобная мерная ложка, которая без верха отмеряет ровно рекомендуемую порцию. ",
+          "negative": "при растворении протеина (изначально светло-бежевого цвета) в воде смесь приобретает розовый цвет. при этом краситель в составе не заявлен. ",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-2/fc022d62-038a-4bdc-b072-1c6f70772df4.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-2/f9f48275-068d-4940-bec9-0c8ea97b6e11.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1694892902,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "017eb99d-4d1e-2067-d5f7-5f2eeab1d346",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Владимир Б."
+        },
+        "content": {
+          "comment": "Нормальный протеин. Правда между многокомпонентным отличий не нашел, кроме как изолят более рассыпчатый, прям пыль иногда. \nа так, приятный вкус, в меру сладкий. брал по скидке, на пробу.  ",
+          "positive": "хорошой прот",
+          "negative": "пока нет",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-3/2f3a1fda-a5ca-4673-911d-647bfd52dd80.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-1/8ec22018-1475-45e1-a3f8-8730202c938b.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1643791697,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0189f09d-98e4-9478-42dd-f4a1943fb7b4",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Татьяна Д."
+        },
+        "content": {
+          "comment": "Хороший срок годности, прекрасно замешивается, мелкодисперсный, вкусный и белковый ;)",
+          "positive": "Цена, приятный вкус, большое количество белка на 100 г - 86!",
+          "negative": "Нет",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-3/dbce0fb4-565c-45ba-a8d9-1eba214a9fb7.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1691959036,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018c5c32-bfa7-e325-914d-ce7a29ddb256",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Наталья Б."
+        },
+        "content": {
+          "comment": "Как всегда товар хорошего качества, в этот раз взяли клубничку. Единственный минус это долгая доставка и перенос даты прибытия, но это к доставке озон больше вопрос, к продавцу вопросов нет, все как всегда на высоте.",
+          "positive": "Всё",
+          "negative": "Нет",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-7/c52b6000-ffa1-4ee3-a3f5-1dfe76d1e433.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1702353964,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018bb449-09cc-4f44-de6b-6d9489988a61",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Наталия М."
+        },
+        "content": {
+          "comment": "",
+          "positive": "качество хорошее, быстро растворяется, пены практически нет. на мой вкус клубника немного приторная. расстройств жкт нет.",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1699536798,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b0efe-8694-046a-2954-2931d0cefb00",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Denny"
+        },
+        "content": {
+          "comment": "",
+          "positive": "хороший сывороточный изолят, лучше соотношение цена-качество ",
+          "negative": "жаль что больше не продают банки по 2 кг",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1696763685,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019e3b46-e25c-7119-ac0f-d87392f0b353",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Дмитрий М."
+        },
+        "content": {
+          "comment": "отличный изолят, хороший вкус и отличная консистенция, размешивается хорошо.",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/2bd5ad35-9c0d-4a4d-aa10-099d34cb9fc3.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-15/15ea7c6a-aac7-455c-972e-9582f4b4086f.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-11/9420e37e-9daa-40c0-9ffd-c397f3169e37.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/457dcbec-2849-4a53-91e9-740b42b1e67c.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-11/4b32314c-5d9b-4a2b-af0e-8a739e3337ec.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-12/ea67c315-4709-4de7-8ea2-0a754bb30f0f.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-15/06e8259e-e923-4f1d-a688-613233c59deb.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1779110965,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018adb81-e3d3-259a-9298-68b7122f271f",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Алина"
+        },
+        "content": {
+          "comment": "Всё отлично. Вкусный, хорошо растворяется, легко усваивается",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1695899852,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0185c0c5-73ac-51af-23f9-65c0491602b3",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Александр А."
+        },
+        "content": {
+          "comment": "стоит своих денег",
+          "positive": "Хороший вкус, легко пьётся ",
+          "negative": "нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1673976849,
+        "usefulness": {
+          "useful": 1,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019fb244-1fa4-7cd3-9a95-5751a57219e8",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Игорь Г."
+        },
+        "content": {
+          "comment": "Всем Доброго и Светлого,вкусный протеин...)))",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-15/dc5ff737-964b-44a9-924b-3fe1f16cae50.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1785402356,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019e6510-fccb-76fa-aafc-2f0c3d56f348",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Расул Ш."
+        },
+        "content": {
+          "comment": "пока все норм",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/263c4852-819a-4e58-81c9-deffa8a4dfd1.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1779812076,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019fc938-a6e6-71e8-9e8d-e0f1f7ab774b",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Кронина О."
+        },
+        "content": {
+          "comment": "Не спец в протеинах вообще. Вкусный точно. Взбиваю мерную ложку  с холодным молоко 300 мл в коктейлевзбивателе вместо одного приема пищи. Действие будем испытывать",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1785787363,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019f18c1-d7bc-7584-a759-603839dacfaa",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Сергей Б."
+        },
+        "content": {
+          "comment": "Беру продукцию этой фирмы (изолят, казеин, креатин, глютамин, цитруллин), и даже если они немного «недовешивают» белка из заявленных, все равно соотношение: цена/качество - не плохие, а главное: есть результат и желудок в порядке",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1782827906,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b9ab4-98f6-c2bb-b259-a1f3ebaee1a1",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Никита Б."
+        },
+        "content": {
+          "comment": "Хороший протеин, не приторно сладкий, неплохо утоляет голод. Проблем с пищеварением не заметил. Из минусов не идеально размешивается. В целом рекомендую.",
+          "positive": "Неплохая цена, не слишком сладкий, много протеина в порции.",
+          "negative": "Не идеально размешивается",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1699107645,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b6764-0953-a27f-ba51-462227eb9b67",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Дарья Б."
+        },
+        "content": {
+          "comment": "Думаю, что из него хорошо будет печь протеиновые панкейки, не нужно будет добавлять сахзам))",
+          "positive": "Вкусный",
+          "negative": "Но очень сладкий. Я дикая сладкоежка, но даже этот протеин показался мне приторным",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1698248257,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "017eba3f-4c2d-06dd-86c3-62df9658a269",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Александр С."
+        },
+        "content": {
+          "comment": "Уже писал ранее отзыв на указанный изолят, только другого вкуса. Повторяться не буду, скажу только что это очень качественный изолят от отечественного бренда. Вкус клубника вообще бомба!\nОднозначно рекомендую к покупке!",
+          "positive": "Отечественный производитель, много белка",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1643802217,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b5e63-508e-85f9-c3a0-e9ed1ccf5075",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Марианна С."
+        },
+        "content": {
+          "comment": "отличный протеин. нормально размешивается, на вкус не приторный. довольна. Спасибо",
+          "positive": "вкусный, усваивается без проблем с жкт",
+          "negative": "нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1698095866,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019e31f3-1a09-70ea-8e18-4a47242e7080",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Андрей Н."
+        },
+        "content": {
+          "comment": "Нормальный продукт, подсел на него , когда из за санкций пропал Iso Sensation 93 . Продукт нормальный по приемлемой цене.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1778954479,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0181e756-f20b-035a-d896-752e03f4cb17",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Алексей Г."
+        },
+        "content": {
+          "comment": "Приятный вкус, растворяется достаточно хорошо. Делаю коктейли коктейли и добавляю в оладьи",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1657443643,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018de6a2-ae28-eef6-c0f8-cfd3212883d6",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Михаил"
+        },
+        "content": {
+          "comment": "Хорошее содержание белка по доступной цене",
+          "positive": "Хорошо размешивается, отличный вкус",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1708971439,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0192f59a-6dfc-7f12-8a87-2943c4256557",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Джамиль Ш."
+        },
+        "content": {
+          "comment": "беру эту фирму постоянно, одна из немногих российских фирм что держит марку",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1730697393,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019bdad5-e87f-7599-b7b4-4808dc4fa96b",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Элла С."
+        },
+        "content": {
+          "comment": "протеин выбирала по показателям, хороший. А доставка удивила-суперьыстрая!",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1768903011,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019d9833-eb3b-7682-ab3b-dc2d3112772d",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Евгений"
+        },
+        "content": {
+          "comment": "отлично перемешивается в воде комнатной температуры, неочень сладкий.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1776375035,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a0c823-106b-737c-98d7-35ee49300fa3",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Андрей Н."
+        },
+        "content": {
+          "comment": "Хороший продукт, беру не в первый раз, цена - качество на уровне.",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1790064139,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019f8b1a-d440-70cb-bdb2-be1cbe49b668",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Константин К."
+        },
+        "content": {
+          "comment": "упакован хорошо , банка герметична. дальше проверим .",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1784745222,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "017ebbc9-4f7c-0f27-f459-627d9f4b8fdd",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Евгений"
+        },
+        "content": {
+          "comment": "",
+          "positive": "Приятный вкус! Хорошо размешивается!",
+          "negative": "Цена",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1643828039,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "0189e07d-e173-4c10-87ae-20d5f48817bd",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Имя скрыто"
+        },
+        "content": {
+          "comment": "",
+          "positive": "Хороший протеин, своих денег стоит",
+          "negative": "Нету",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1692018677,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 2
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018a6092-f24e-c951-364e-9c511fe85f6c",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Александр С."
+        },
+        "content": {
+          "comment": "Отличный протеин ",
+          "positive": "Наполняет) ",
+          "negative": "Нет",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1693837358,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01941865-a052-76b0-b8fa-305fd1e8850e",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Константин Л."
+        },
+        "content": {
+          "comment": "всё нравится, беру третий раз",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1735576102,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "018b9ec9-3597-1517-3b1d-84d30f8a4ee2",
+        "itemId": "185618681",
+        "author": {
+          "firstName": "Артем А."
+        },
+        "content": {
+          "comment": "",
+          "positive": "Вкус, растворимость, состав ",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1699176324,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      }
+    ]
+  },
+  "webReviewProductScore-14003865-default-1": {
+    "totalScore": 4.9,
+    "reviewsCount": 398,
+    "score": [
+      {
+        "title": "5 звёзд",
+        "value": 353
+      },
+      {
+        "title": "4 звезды",
+        "value": 28
+      },
+      {
+        "title": "3 звезды",
+        "value": 8
+      },
+      {
+        "title": "2 звезды",
+        "value": 2
+      },
+      {
+        "title": "1 звезда",
+        "value": 7
+      }
+    ]
+  }
+}

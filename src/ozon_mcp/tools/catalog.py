@@ -84,7 +84,7 @@ async def product_details(
     ] = False,
     with_reviews: Annotated[
         bool,
-        Field(description="Also fetch the reviews (one extra request)."),
+        Field(description="Also fetch reviews, walking public review pages when needed."),
     ] = False,
 ) -> ProductCard:
     """Product card: title, three prices, variants, characteristics, gallery photos.
@@ -114,7 +114,12 @@ async def get_reviews(sku_or_url: SkuOrUrl, limit: Limit = 30, sort: ReviewSort 
     `distribution` per star, and `limit` reviews with `fetched` saying how many
     came back. count and fetched are different numbers: reporting the second as
     the first turns 155 847 reviews into 30.
-    Reviews arrive thirty at a time and pages are walked to meet `limit`. There
+    Public mode reads declared review widget states with schema.org fallback
+    and follows declared next links up to 40 pages. An explicit no-reviews
+    declaration returns an empty result. Missing scalar fields stay null and
+    missing collections stay empty. Unreadable pages and antibot blocks raise
+    errors, with no composer fallback.
+    In composer mode, reviews arrive thirty at a time and pages are walked to meet `limit`. There
     is no filter by star, so the one-star ones are reached with sort="worst" plus
     enough depth.
     Each review keeps «Достоинства» and «Недостатки» apart from the comment,

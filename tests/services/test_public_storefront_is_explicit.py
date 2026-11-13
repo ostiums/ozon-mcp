@@ -50,19 +50,37 @@ def test_public_search_reads_the_open_page_and_not_composer(monkeypatch: pytest.
     assert "brand_was_predicted" not in calls[0]
 
 
-def test_public_product_keeps_only_the_requested_sku(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("with_reviews", [False, True])
+def test_public_product_keeps_only_the_requested_sku(monkeypatch: pytest.MonkeyPatch, *, with_reviews: bool) -> None:
+    calls: list[str] = []
+
     class Session:
         def read_public_page(self, path: str) -> dict[str, object]:
+            calls.append(path)
+            if "/reviews/" in path:
+                markup = Path("tests/fixtures/public-reviews-schema.html").read_text(encoding="utf-8")
+                document = document_from_html(
+                    markup.replace("2859492815", "1600000001").replace('rel="next"', 'rel="prev"')
+                )
+                document["url"] = "https://www.ozon.ru" + path
+                return document
             return document_from_html(FIXTURE.read_text(encoding="utf-8"))
 
     settings = OzonSettings(storefront="public")
     monkeypatch.setattr(public_catalog, "get_settings", lambda: settings)
     monkeypatch.setattr(public_catalog, "get_session", Session)
-    card = catalog.product_details("1600000001", with_description=True, with_reviews=True)
+    card = catalog.product_details("1600000001", with_description=True, with_reviews=with_reviews)
     assert card.sku == "1600000001"
     assert card.price == "2499"
     assert card.characteristics[0].name == "Белки"
-    assert card.reviews is None
+    if with_reviews:
+        assert card.reviews is not None
+        assert card.reviews.fetched == 1
+        assert card.reviews.reviews[0].text == "Хороший товар"
+        assert calls == ["/product/1600000001/", "/product/1600000001/reviews/?sort=usefulness_desc"]
+    else:
+        assert card.reviews is None
+        assert calls == ["/product/1600000001/"]
     with pytest.raises(OzonError, match="did not declare"):
         catalog.product_details("999999999")
 
