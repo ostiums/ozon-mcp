@@ -7,9 +7,10 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from playwright.sync_api import BrowserContext, BrowserType, Error
+from playwright.sync_api import BrowserContext, BrowserType, Error, Page
 
 from ozon_mcp import dependencies
+from ozon_mcp.session import transport
 from ozon_mcp.session.transport import OzonSession
 from ozon_mcp.settings import get_settings
 
@@ -22,7 +23,10 @@ def test_failed_start_can_retry_on_the_same_worker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
 ) -> None:
     (tmp_path / "Default").mkdir()
-    monkeypatch.setattr(get_settings(), "storefront", "public")
+    monkeypatch.setattr(get_settings(), "storefront", "composer")
+    monkeypatch.setattr(Page, "goto", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(Page, "wait_for_timeout", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(OzonSession, "_raise_for_antibot_challenge", lambda _self: None)
     monkeypatch.setattr(dependencies, "_executor", None)
     monkeypatch.setattr(dependencies, "_session", None)
     session = OzonSession(profile_dir=tmp_path)
@@ -69,3 +73,47 @@ def test_failed_start_can_retry_on_the_same_worker(
     assert len(launches) == 2
     assert launches[0] == launches[1] != threading.get_ident()
     assert closed == [launches[0]] * (2 if failure == "page" else 1)
+
+
+def test_failed_public_attach_does_not_poison_the_worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "Default").mkdir()
+    monkeypatch.setattr(get_settings(), "storefront", "public")
+    monkeypatch.setattr(dependencies, "_executor", None)
+    monkeypatch.setattr(dependencies, "_session", None)
+    attempts: list[int] = []
+    released: list[bool] = []
+
+    class Lease:
+        def is_alive(self) -> bool:
+            return True
+
+        def attach(self, playwright: Any, _timeout: float) -> tuple[Any, Any]:
+            attempts.append(threading.get_ident())
+            if len(attempts) == 1:
+                playwright.chromium.connect_over_cdp("ws://127.0.0.1:1", timeout=100)
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=str(tmp_path), headless=True, args=["--no-sandbox"]
+            )
+            return context, context.pages[0]
+
+        def close(self) -> None:
+            released.append(True)
+
+    monkeypatch.setattr(transport, "acquire_browser", lambda *_args: Lease())
+    session = OzonSession(profile_dir=tmp_path)
+
+    async def exercise() -> None:
+        try:
+            with pytest.raises(Error, match="connect_over_cdp"):
+                await dependencies.run_blocking(session._launch_browser)
+            await dependencies.run_blocking(session._launch_browser)
+            assert await dependencies.run_blocking(lambda: session._page.evaluate("1 + 1")) == 2
+        finally:
+            await dependencies.run_blocking(session.close)
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        dependencies.shutdown_session()
+    assert attempts[0] == attempts[1] != threading.get_ident()
+    assert released == [True, True]
