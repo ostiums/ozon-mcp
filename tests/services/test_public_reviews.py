@@ -165,3 +165,32 @@ def test_public_product_details_includes_requested_reviews(public_session: Any) 
     assert card.sku == SKU
     assert card.reviews is not None
     assert card.reviews.reviews[0].text == "Хороший товар"
+
+
+def test_public_reviews_merge_schema_copies_before_satisfying_limit(public_session: Any) -> None:
+    first = document([review()], following="?page=2&sort=usefulness_desc")
+    first["html"] += """
+    <div itemscope itemtype="https://schema.org/Product">
+      <meta itemprop="sku" content="2859492815">
+      <div itemprop="review" itemscope itemtype="https://schema.org/Review">
+        <span itemprop="author">Анна</span>
+        <meta itemprop="datePublished" content="2026-11-10">
+        <div itemprop="reviewRating" itemscope itemtype="https://schema.org/Rating">
+          <meta itemprop="ratingValue" content="5">
+        </div>
+        <p itemprop="reviewBody">Хороший товар</p>
+      </div>
+    </div>
+    """
+    calls = public_session([first, document([review("Борис")])])
+    result = catalog.get_reviews(SKU, limit=2)
+    assert [item.author for item in result.reviews] == ["Анна", "Борис"]
+    assert len(calls) == 2
+
+
+def test_public_reviews_keep_distinct_ids_with_identical_fields(public_session: Any) -> None:
+    first, second = review(), review()
+    second["@id"] = "urn:review:different-person-with-the-same-name"
+    public_session([document([first, second])])
+    result = catalog.get_reviews(SKU, limit=2)
+    assert result.fetched == 2

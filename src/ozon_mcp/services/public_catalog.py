@@ -8,7 +8,7 @@ from ozon_mcp.dependencies import get_session
 from ozon_mcp.errors import OzonError
 from ozon_mcp.models.catalog import DeliveryEstimate, OwnedSearchProbe, ProductCard, Reviews, Tile
 from ozon_mcp.parsing.public_delivery import delivery_from_document
-from ozon_mcp.parsing.public_reviews import review_urls_match, reviews_from_document
+from ozon_mcp.parsing.public_reviews import PublicReviewCollection, review_urls_match, reviews_from_document
 from ozon_mcp.parsing.public_storefront import (
     PublicProduct,
     format_public_diagnostics,
@@ -196,7 +196,7 @@ def reviews_public(sku: str, limit: int, sort: str) -> Reviews:
         raise OzonError("Public reviews sort must be useful, best, or worst.")
     path = f"/product/{sku}/reviews/?sort={REVIEW_SORTS[sort]}"
     answer = Reviews()
-    seen: set[str] = set()
+    collected = PublicReviewCollection()
     visited: set[str] = set()
     session = get_session()
     for _ in range(40):
@@ -213,15 +213,13 @@ def reviews_public(sku: str, limit: int, sort: str) -> Reviews:
         answer.count = answer.count if answer.count is not None else page.answer.count
         answer.score = answer.score if answer.score is not None else page.answer.score
         fresh = 0
-        for key, review in zip(page.review_keys, page.answer.reviews, strict=True):
-            if key not in seen:
-                seen.add(key)
-                answer.reviews.append(review)
+        for identifier, review in zip(page.review_ids, page.answer.reviews, strict=True):
+            if collected.add(review, identifier):
                 fresh += 1
-        if len(answer.reviews) >= limit or not fresh or not page.next_path or page.next_path in visited:
+        if len(collected.reviews) >= limit or not fresh or not page.next_path or page.next_path in visited:
             break
         path = page.next_path
-    answer.reviews = answer.reviews[:limit]
+    answer.reviews = collected.reviews[:limit]
     answer.fetched = len(answer.reviews)
     answer.photos = list(dict.fromkeys(photo for review in answer.reviews for photo in review.photos))
     return answer

@@ -133,3 +133,16 @@ def test_product_sku_and_url_must_agree() -> None:
         })
         is None
     )
+
+
+@pytest.mark.parametrize("order", [(0, 1, 2), (1, 0, 2), (1, 2, 0)])
+def test_schema_identity_aliases_preserve_distinct_reviews(order: tuple[int, ...]) -> None:
+    rows = [
+        {"@type": "Review", "reviewBody": "Работает"},
+        {"@type": "Review", "@id": "urn:review:first", "reviewBody": "Работает"},
+        {"@type": "Review", "@id": "urn:review:second", "reviewBody": "Работает"},
+    ]
+    page = parse_json({"@type": "Product", "sku": SKU, "review": [rows[index] for index in order]})
+    assert page is not None
+    assert page.answer.fetched == 2
+    assert set(page.review_ids) == {"urn:review:first", "urn:review:second"}

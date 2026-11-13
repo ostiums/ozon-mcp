@@ -26,7 +26,31 @@ _REVIEW_PATH = re.compile(r"/product/(?:[a-z0-9-]*-)?(\d{6,})/reviews/?$")
 class PublicReviewPage:
     answer: Reviews
     next_path: str | None
-    review_keys: list[str] = field(default_factory=list)
+    review_ids: list[str | None] = field(default_factory=list)
+
+
+@dataclass
+class PublicReviewCollection:
+    reviews: list[Review] = field(default_factory=list)
+    identifiers: list[str | None] = field(default_factory=list)
+    ids: set[str] = field(default_factory=set)
+    contents: dict[str, list[int]] = field(default_factory=dict)
+
+    def add(self, review: Review, identifier: str | None) -> bool:
+        """Record a declaration and return whether it identifies a new review."""
+        known = self.contents.setdefault(review.model_dump_json(), [])
+        if identifier in self.ids or (identifier is None and known):
+            return False
+        if identifier is not None:
+            self.ids.add(identifier)
+            for index in known:
+                if self.identifiers[index] is None:
+                    self.identifiers[index] = identifier
+                    return False
+        known.append(len(self.reviews))
+        self.reviews.append(review)
+        self.identifiers.append(identifier)
+        return True
 
 
 def review_link(href: str) -> tuple[str, str] | None:
@@ -60,18 +84,16 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
     root = _parse(str(document.get("html") or ""))
     nodes.extend(_microdata(node) for node in _walk(root) if "itemscope" in node.attrs and _outer_scope(node))
     raw_reviews, aggregates = _product_declarations(nodes, sku)
-    reviews: list[Review] = []
-    keys: list[str] = []
+    collected = PublicReviewCollection()
     for raw in raw_reviews:
         if "itemReviewed" in raw and not _is_product(raw["itemReviewed"], sku):
             continue
         review = _review(raw)
         if review is None:
             continue
-        key = _string(raw.get("@id")) or review.model_dump_json()
-        if key not in keys:
-            keys.append(key)
-            reviews.append(review)
+        identifier = _string(raw.get("@id"))
+        collected.add(review, identifier)
+    reviews = collected.reviews
     count = _unique([_integer(item.get("reviewCount")) for item in aggregates])
     score = _unique([_rating(item, integer=False) for item in aggregates])
     if not reviews and count != 0:
@@ -87,7 +109,7 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
             photos=list(dict.fromkeys(photo for review in reviews for photo in review.photos)),
         ),
         next_path=_next_path(root, document.get("reviewLinks"), identity[0], sku),
-        review_keys=keys,
+        review_ids=collected.identifiers,
     )
 
 

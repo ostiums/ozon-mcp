@@ -118,7 +118,7 @@ async def get_reviews(sku_or_url: SkuOrUrl, limit: Limit = 30, sort: ReviewSort 
     its declared next links up to 40 pages. Missing scalar fields stay null and
     missing collections stay empty. Unreadable pages and antibot blocks raise errors, with no composer
     fallback. Live public review markup compatibility remains unverified.
-    Reviews arrive thirty at a time and pages are walked to meet `limit`. There
+    In composer mode, reviews arrive thirty at a time and pages are walked to meet `limit`. There
     is no filter by star, so the one-star ones are reached with sort="worst" plus
     enough depth.
     Each review keeps «Достоинства» and «Недостатки» apart from the comment,
