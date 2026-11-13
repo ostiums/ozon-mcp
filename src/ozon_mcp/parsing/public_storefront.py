@@ -85,7 +85,7 @@ PUBLIC_PAGE_READER = """() => {
     .map(n => n.getAttribute('href') || '');
   const widgetStates = Object.fromEntries(
     [...document.querySelectorAll('div.client-state [id^="state-"][data-state]')]
-      .filter(n => /^(state-webListReviews-|state-webReviewProductScore-)/.test(n.id))
+      .filter(n => /^(state-webListReviews-|state-webReviewProductScore-|state-error-)/.test(n.id))
       .map(n => [n.id.slice(6), n.getAttribute('data-state')])
   );
   return { title: document.title || "", url: location.href, documentEpoch: performance.timeOrigin,
