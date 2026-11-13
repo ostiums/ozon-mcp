@@ -146,3 +146,24 @@ def test_schema_identity_aliases_preserve_distinct_reviews(order: tuple[int, ...
     assert page is not None
     assert page.answer.fetched == 2
     assert set(page.review_ids) == {"urn:review:first", "urn:review:second"}
+
+
+def test_product_reviews_inside_a_webpage_microdata_scope_are_read() -> None:
+    markup = """
+    <div itemscope itemtype="https://schema.org/WebPage">
+      <div itemprop="mainEntity" itemscope itemtype="https://schema.org/Product">
+        <meta itemprop="sku" content="2859492815">
+        <div itemprop="review" itemscope itemtype="https://schema.org/Review">
+          <span itemprop="author">Анна</span>
+          <p itemprop="reviewBody">Работает</p>
+        </div>
+      </div>
+    </div>
+    """
+    document = document_from_html(markup)
+    document["url"] = URL
+    page = reviews_from_document(document, SKU)
+    assert page is not None
+    assert page.answer.fetched == 1
+    assert page.answer.reviews[0].text == "Работает"
+    assert page.answer.reviews[0].author == "Анна"

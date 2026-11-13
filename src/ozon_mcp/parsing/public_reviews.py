@@ -82,7 +82,12 @@ def reviews_from_document(document: dict[str, Any], sku: str) -> PublicReviewPag
         return None
     nodes = [node for block in document.get("jsonLd") or [] if isinstance(block, str) for node in _json_nodes(block)]
     root = _parse(str(document.get("html") or ""))
-    nodes.extend(_microdata(node) for node in _walk(root) if "itemscope" in node.attrs and _outer_scope(node))
+    nodes.extend(
+        _microdata(node)
+        for node in _walk(root)
+        if "itemscope" in node.attrs
+        and any(kind.rsplit("/", 1)[-1] in {"Product", "Review"} for kind in node.attrs.get("itemtype", "").split())
+    )
     raw_reviews, aggregates = _product_declarations(nodes, sku)
     collected = PublicReviewCollection()
     for raw in raw_reviews:
@@ -249,15 +254,6 @@ def _list(raw: Any) -> list[Any]:
 def _unique[T](values: list[T | None]) -> T | None:
     known = {value for value in values if value is not None}
     return next(iter(known)) if len(known) == 1 else None
-
-
-def _outer_scope(node: _Node) -> bool:
-    parent = node.parent
-    while parent is not None:
-        if "itemscope" in parent.attrs:
-            return False
-        parent = parent.parent
-    return True
 
 
 def _microdata(scope: _Node) -> dict[str, Any]:
