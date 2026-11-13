@@ -254,7 +254,7 @@ class Safety(unittest.TestCase):
         assert opts[CurlOpt.HTTPPROXYTUNNEL] == 1
         assert not opts[CurlOpt.NOPROXY]
 
-    def test_public_launch_never_imports_state_or_unlinks_lock(self) -> None:
+    def test_public_launch_delegates_profile_ownership_without_importing_state(self) -> None:
 
         s = OzonSession()
         s._profile = MagicMock()
@@ -272,14 +272,16 @@ class Safety(unittest.TestCase):
             ),
             patch("ozon_mcp.session.transport.sync_playwright") as pw,
             patch("ozon_mcp.session.transport._make_private") as private,
+            patch("ozon_mcp.session.transport.acquire_browser") as acquire,
         ):
             pw.return_value.start.return_value = engine
+            acquire.return_value.attach.return_value = (context, context.pages[0])
             s._launch_browser()
             private.assert_not_called()
             s._seed_from_state.assert_not_called()
             s._clear_stale_lock.assert_not_called()
             context.pages[0].goto.assert_not_called()
-        assert engine.chromium.launch_persistent_context.call_args.kwargs["proxy"] == {"server": _HOME_PROXY}
+        assert acquire.call_args.args[1]["proxy"] == {"server": _HOME_PROXY}
 
 
 class Clock:

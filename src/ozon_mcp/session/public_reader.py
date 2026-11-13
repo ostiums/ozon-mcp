@@ -88,7 +88,19 @@ READINESS = (
          ([].concat(node.review || []).length || String(node.aggregateRating?.reviewCount) === '0')) return true;
      return reviewSchema(node['@graph']);
  };
- const reviews = [...document.querySelectorAll('[itemscope][itemtype$="/Review"]')].some(visible) ||
+ const reviewWidgets = [...document.querySelectorAll(
+     'div.client-state [id^="state-webListReviews-"][data-state]')].some(n => {
+       try {
+         const state = JSON.parse(n.getAttribute('data-state'));
+         return Array.isArray(state?.reviews) && (state.reviews.length > 0 || state.paging?.total === 0 ||
+           [...document.querySelectorAll(
+             'div.client-state [id^="state-webReviewProductScore-"][data-state]')].some(score => {
+               try { return JSON.parse(score.getAttribute('data-state'))?.reviewsCount === 0; }
+               catch { return false; }
+             }));
+       } catch { return false; }
+     });
+ const reviews = reviewWidgets || [...document.querySelectorAll('[itemscope][itemtype$="/Review"]')].some(visible) ||
      [...document.querySelectorAll('[itemscope][itemtype$="/Product"] [itemprop="reviewCount"]')]
        .some(n => (n.getAttribute('content') || n.textContent || '').trim() === '0') ||
      [...document.querySelectorAll('script[type="application/ld+json"]')].some(n => {

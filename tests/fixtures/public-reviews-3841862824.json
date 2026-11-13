@@ -1,0 +1,521 @@
+{
+  "webReviewProductScore-14003865-default-1": {
+    "totalScore": 4.5,
+    "reviewsCount": 14,
+    "score": [
+      {
+        "title": "5 звёзд",
+        "value": 11
+      },
+      {
+        "title": "4 звезды",
+        "value": 2
+      },
+      {
+        "title": "3 звезды",
+        "value": 0
+      },
+      {
+        "title": "2 звезды",
+        "value": 0
+      },
+      {
+        "title": "1 звезда",
+        "value": 1
+      }
+    ]
+  },
+  "webListReviews-5603940-default-1": {
+    "itemId": "3841862824",
+    "requestedPath": "/product/3841862824/reviews/",
+    "paging": {
+      "total": 14,
+      "commonTotal": 14,
+      "page": 1,
+      "perPage": 30,
+      "links": [
+        {
+          "text": "1",
+          "urlParams": ""
+        }
+      ],
+      "nextButton": "",
+      "prevButton": ""
+    },
+    "productScore": 4.5,
+    "products": {
+      "3841861593": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "белый"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "белый"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "12 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "512 ГБ"
+          }
+        ]
+      },
+      "3841861928": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "синий"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "синий"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "8 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "256 ГБ"
+          }
+        ]
+      },
+      "3841862183": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "белый"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "белый"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "8 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "256 ГБ"
+          }
+        ]
+      },
+      "3841862258": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "синий"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "синий"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "12 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "256 ГБ"
+          }
+        ]
+      },
+      "3841862483": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "черный"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "черный"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "8 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "256 ГБ"
+          }
+        ]
+      },
+      "3841862824": {
+        "variants": [
+          {
+            "name": "Название цвета",
+            "value": "белый"
+          },
+          {
+            "name": "Цвет товара",
+            "value": "белый"
+          },
+          {
+            "name": "Оперативная память",
+            "value": "12 ГБ"
+          },
+          {
+            "name": "Встроенная память",
+            "value": "256 ГБ"
+          }
+        ]
+      }
+    },
+    "reviews": [
+      {
+        "uuid": "019f6b96-b0c6-77be-a817-3db1b01553af",
+        "itemId": "3841861928",
+        "author": {
+          "firstName": "Александр Г."
+        },
+        "content": {
+          "comment": "Хороший телефон, заказ шёл примерно месяц. К цене примерно 1200-1300 добавляйте, таможенный сбор. Подставка в подарок от продавца.",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-15/0148bdb8-35a5-4c14-8db5-85f10113504a.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/0b4c731f-79b3-4aef-b6fb-8be770c574da.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-12/00bf0c2b-1aad-4d96-ba89-7a8a7c3f9529.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-11/3643f0d3-7690-4da3-ab10-9e7d2614694d.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-12/eb81d64c-8769-43a2-9a45-b6e3ac4ce304.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-13/df0021c8-e267-416d-82c5-3fbfb6b477f1.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-13/98deb72a-3d94-462a-a2ef-e7007c0b96e8.jpeg"
+            }
+          ],
+          "score": 5
+        },
+        "publishedAt": 1784216530,
+        "usefulness": {
+          "useful": 17,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 5
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019edb6d-905c-76a3-b545-f7a898b9e053",
+        "itemId": "3841862483",
+        "author": {
+          "firstName": "Сергей С."
+        },
+        "content": {
+          "comment": "Шел около месяца ,коробка запечатана ,state 0",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1781797854,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 2
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a06c5a-543a-73fc-b152-0e2b1d827e6e",
+        "itemId": "3841862483",
+        "author": {
+          "firstName": "Максим П."
+        },
+        "content": {
+          "comment": "брал на подарок, работает",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1788524257,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 2
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019fb29b-8b33-7568-b92c-595e4063f552",
+        "itemId": "3841862258",
+        "author": {
+          "firstName": "Ариф С."
+        },
+        "content": {
+          "comment": "Пришло почти вовремя,смартфон понравился, спасибо за подарки,есть маленькое \"но\" не работает зарядка от слова совсем 🤔😑",
+          "positive": "",
+          "negative": "",
+          "photos": [
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/1e197aee-6f84-43a9-b920-02f7c3d46932.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/60967704-1793-420a-8c2a-4b16ed4e60ab.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-13/51af6ea8-2bc8-4d65-b1f0-fa0baf78612d.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/943889d5-f141-4041-803f-d4f63db1a309.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-11/480be8b6-6a6c-40be-bb3b-33a142c2827e.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/97d4de91-ca1c-4b9e-9bb9-330ea21247e1.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-14/b51387be-28dd-4d38-be56-c9dddf545fd3.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-11/f24df84f-2b73-441e-84cd-685eee35d0ab.jpeg"
+            },
+            {
+              "url": "https://ir.ozone.ru/s3/rp-photo-15/ceb8bd44-c58c-4fdc-bc85-53c992d9f21f.jpeg"
+            }
+          ],
+          "score": 4
+        },
+        "publishedAt": 1785573705,
+        "usefulness": {
+          "useful": 8,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 1
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a10f84-75de-783d-bc50-2a668942f01e",
+        "itemId": "3841862483",
+        "author": {
+          "firstName": "Борис Н."
+        },
+        "content": {
+          "comment": "не для России",
+          "positive": "",
+          "negative": "",
+          "photos": [],
+          "score": 1
+        },
+        "publishedAt": 1791261704,
+        "usefulness": {
+          "useful": 0,
+          "unuseful": 0,
+          "userSelection": "UNKNOWN"
+        },
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a1b53d-9258-7af7-b7a8-c4f63f436f2c",
+        "itemId": "3841862824",
+        "author": {
+          "firstName": "Александр Л."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1794042073,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a0c2ec-0b25-79f3-b6ba-23db2bd1945b",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Дмитрий К."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1789976644,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a0bfd6-f361-71ef-9b8f-ea49ccadca05",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Зеленый слоник"
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1789924930,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a06d05-e90b-73b3-8200-625ed0a9e176",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Ольга Р."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1788535499,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a06334-70b0-7d16-bd92-995088d77026",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Светлана Н."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1788370776,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a06307-0d77-73c3-94e2-ac934b44c0dc",
+        "itemId": "3841862483",
+        "author": {
+          "firstName": "Алексей С."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1788367802,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019fd6c6-e211-73d0-afb9-982b878ad52b",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Альберт И."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1786014786,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "019f9cbe-c73a-7274-b664-3440ef0168ad",
+        "itemId": "3841862183",
+        "author": {
+          "firstName": "Светлана П."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 5
+        },
+        "publishedAt": 1785041176,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      },
+      {
+        "uuid": "01a0d372-47e2-71e9-be66-5ec9af6107cb",
+        "itemId": "3841861928",
+        "author": {
+          "firstName": "Валерий К."
+        },
+        "content": {
+          "comment": null,
+          "positive": null,
+          "negative": null,
+          "photos": [],
+          "score": 4
+        },
+        "publishedAt": 1790253877,
+        "usefulness": null,
+        "comments": {
+          "totalCount": 0
+        },
+        "isItemPurchased": false
+      }
+    ]
+  }
+}

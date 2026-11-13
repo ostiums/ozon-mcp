@@ -62,6 +62,7 @@ from ozon_mcp.session.phone_form import (
 from ozon_mcp.session.profile_lock import clear_dead_profile_lock
 from ozon_mcp.session.proxy import browser_network_args, http_proxy_choice, playwright_proxy
 from ozon_mcp.session.public_reader import read_owned_public
+from ozon_mcp.session.shared_browser import BrowserLease, acquire_browser
 from ozon_mcp.settings import get_settings
 from ozon_mcp.utils.observability import BROWSER_ACTIVE, SESSION_BOOTSTRAPS, UPSTREAM_LATENCY, UPSTREAM_REQUESTS
 from ozon_mcp.utils.serde import dumps, loads
@@ -356,6 +357,7 @@ class OzonSession:
         self._impersonate = settings.impersonate
         self._lock = threading.RLock()
         self._playwright: Any = None
+        self._browser_lease: BrowserLease | None = None
         self._context: Any = None
         self._page: Any = None
         self._http: Any = None
@@ -374,7 +376,6 @@ class OzonSession:
         if public:
             if fresh:
                 raise OzonError("Public mode requires an existing profile; no state is imported.")
-            # Chrome enforces the lock. Never unlink a possibly live owner's lock.
         else:
             _make_private(self._profile, create=True)
             _make_private(self._backup)
@@ -398,17 +399,28 @@ class OzonSession:
             launch_kwargs["proxy"] = proxy
         if settings.browser_channel is not None:
             launch_kwargs["channel"] = settings.browser_channel
-        self._playwright = sync_playwright().start()
-        self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
-        if fresh and not public:
-            self._seed_from_state()
-        self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
+        try:
+            self._playwright = sync_playwright().start()
+            self._open_context(launch_kwargs, public=public, fresh=fresh)
+        except BaseException:
+            self._close_browser()
+            raise
         BROWSER_ACTIVE.set(1)
         if public:
             return  # Public catalog navigation owns its shared deadline.
         self._page.goto(HOME_URL, wait_until="domcontentloaded", timeout=self._browser_ms(1.5))
         self._page.wait_for_timeout(12_000)  # let Variti set cookies
         self._raise_for_antibot_challenge()
+
+    def _open_context(self, launch_kwargs: dict[str, Any], *, public: bool, fresh: bool) -> None:
+        if public:
+            self._browser_lease = acquire_browser(self._profile, launch_kwargs, get_settings().public_read_timeout)
+            self._context, self._page = self._browser_lease.attach(self._playwright, get_settings().public_read_timeout)
+        else:
+            self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
+            if fresh:
+                self._seed_from_state()
+            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
 
     def _raise_for_antibot_challenge(self, title: str | None = None) -> None:
         """Stop on an unhealthy title. A network title is not a CAPTCHA."""
@@ -482,18 +494,26 @@ class OzonSession:
             logger.info("seeded %d cookies from %s into a fresh profile", len(cookies), self._seed_state)
 
     def _close_browser(self) -> None:
-        for obj, method in ((self._context, "close"), (self._playwright, "stop")):
+        lease = getattr(self, "_browser_lease", None)
+        owned = self._page if lease is not None else self._context
+        for obj, method in ((owned, "close"), (self._playwright, "stop")):
             try:
                 if obj is not None:
                     getattr(obj, method)()
             except Exception:
                 logger.debug("browser teardown error", exc_info=True)
+        if lease is not None:
+            lease.close()
+        self._browser_lease = None
         self._playwright = self._context = self._page = None
         BROWSER_ACTIVE.set(0)
         if get_settings().storefront != "public":
             _make_private(self._profile)
 
     def _ensure_browser(self) -> None:
+        lease = getattr(self, "_browser_lease", None)
+        if (lease is not None and not lease.is_alive()) or (self._page is not None and _page_is_closed(self._page)):
+            self._close_browser()
         if self._page is None:
             self._launch_browser()
 

@@ -238,9 +238,10 @@ def parse_reviews(data: dict[str, Any]) -> Reviews:
             )
         )
     total = (listing.get("paging") or {}).get("total") if isinstance(listing.get("paging"), dict) else None
+    count = score_widget.get("reviewsCount")
     return Reviews(
         score=_as_float(score_widget.get("totalScore") or listing.get("productScore")),
-        count=_as_int(score_widget.get("reviewsCount") or total),
+        count=_as_int(total if count is None else count),
         fetched=len(reviews),
         distribution=_buckets(score_widget.get("score")),
         photos=list(dict.fromkeys(all_photos)),
