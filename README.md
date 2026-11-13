@@ -408,7 +408,28 @@ public home first. There is no header-harvesting order-list request, curl
 impersonation, profile restore/seed, or cookie transfer in this mode. Browser
 redirects are rejected without following or inspecting their destinations.
 Commands are not automatically replayed after an uncertain result. Public mode
-requires an existing browser profile; it never adopts another browser or tab.
+requires an existing browser profile. On Linux, public MCP processes share one
+browser owner for that profile. Each client leases a separate tab and closes
+only that tab when it exits. A killed client loses its lease, so the owner also
+closes its tab. The owner closes Chrome after 30 seconds with no clients.
+
+The owner holds a cross-process lock for its entire lifetime. It removes a
+Chromium Singleton lock only when the recorded local PID is dead. A live or
+unrecognized owner is reported without changing its lock. Clients with different
+browser or proxy settings cannot share an owner. The local control socket is
+private to the current OS user, and Chrome's debugging endpoint binds to loopback.
+The existing profile retains the login. No cookie import or profile copy is used.
+
+To verify an installed public runtime with CART=1, WRITES=0, and ORDERS=0:
+
+```bash
+uv run python scripts/verify_parallel_stdio.py /path/to/venv/bin/ozon-mcp --product 507239415
+```
+
+The script reads status and price from concurrent clients, kills one of its own
+clients, checks the survivor, and starts a replacement. It performs no account
+writes. Pass a SKU or canonical product URL after resolving any public short link.
+
 The composer mode's existing transport remains separate, with redirects refused
 and explicit proxy / `NO_PROXY` control.
 
