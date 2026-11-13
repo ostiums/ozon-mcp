@@ -398,11 +398,15 @@ class OzonSession:
             launch_kwargs["proxy"] = proxy
         if settings.browser_channel is not None:
             launch_kwargs["channel"] = settings.browser_channel
-        self._playwright = sync_playwright().start()
-        self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
-        if fresh and not public:
-            self._seed_from_state()
-        self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
+        try:
+            self._playwright = sync_playwright().start()
+            self._context = self._playwright.chromium.launch_persistent_context(**launch_kwargs)
+            if fresh and not public:
+                self._seed_from_state()
+            self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
+        except BaseException:
+            self._close_browser()
+            raise
         BROWSER_ACTIVE.set(1)
         if public:
             return  # Public catalog navigation owns its shared deadline.
