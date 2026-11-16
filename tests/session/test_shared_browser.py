@@ -189,7 +189,8 @@ def test_client_temp_directories_do_not_split_profile_ownership(
     assert _runtime_dir(tmp_path) == first
 
 
-def test_first_call_after_owner_exit_reconnects(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("recover", ["signed_in_user", "_launch_browser"])
+def test_first_call_after_owner_exit_reconnects(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, recover: str) -> None:
     (tmp_path / "Default").mkdir()
     monkeypatch.setattr(transport, "get_settings", lambda: OzonSettings(storefront="public"))
 
@@ -204,7 +205,7 @@ def test_first_call_after_owner_exit_reconnects(monkeypatch: pytest.MonkeyPatch,
         assert session._browser_lease is not None
         old_owner = session._browser_lease.owner_pid
         _stop_owner(old_owner, tmp_path)
-        assert session.signed_in_user() is None
+        assert getattr(session, recover)() is None
         assert session._browser_lease is not None
         owner = session._browser_lease.owner_pid
         assert owner != old_owner

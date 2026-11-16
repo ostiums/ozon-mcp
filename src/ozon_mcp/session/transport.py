@@ -213,7 +213,17 @@ def _page_is_closed(page: Any) -> bool:
     try:
         return bool(closed())
     except Exception:
-        return False
+        return True
+
+
+def _driver_disconnected(playwright: Any) -> bool:
+    # Page.is_closed() stays false when the local driver dies before delivering
+    # close events. A second RPC can then wait forever on its dead dispatcher.
+    implementation = getattr(playwright, "_impl_obj", None)
+    connection = getattr(implementation, "_connection", None)
+    driver = getattr(connection, "_transport", None)
+    failure = getattr(driver, "on_error_future", None)
+    return failure is not None and bool(failure.done())
 
 
 def _elapsed_ms(started: float) -> int:
@@ -368,6 +378,7 @@ class OzonSession:
 
     # -- browser lifecycle ---------------------------------------------------
     def _launch_browser(self) -> None:
+        self._discard_dead_browser()
         if self._page is not None:
             self._raise_for_antibot_challenge()
             return
@@ -496,6 +507,8 @@ class OzonSession:
     def _close_browser(self) -> None:
         lease = getattr(self, "_browser_lease", None)
         owned = self._page if lease is not None else self._context
+        if _driver_disconnected(self._playwright):
+            owned = None
         for obj, method in ((owned, "close"), (self._playwright, "stop")):
             try:
                 if obj is not None:
@@ -510,10 +523,17 @@ class OzonSession:
         if get_settings().storefront != "public":
             _make_private(self._profile)
 
-    def _ensure_browser(self) -> None:
+    def _discard_dead_browser(self) -> None:
         lease = getattr(self, "_browser_lease", None)
-        if (lease is not None and not lease.is_alive()) or (self._page is not None and _page_is_closed(self._page)):
+        if (
+            _driver_disconnected(self._playwright)
+            or (lease is not None and not lease.is_alive())
+            or (self._page is not None and _page_is_closed(self._page))
+        ):
             self._close_browser()
+
+    def _ensure_browser(self) -> None:
+        self._discard_dead_browser()
         if self._page is None:
             self._launch_browser()
 

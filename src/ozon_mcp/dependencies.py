@@ -6,6 +6,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
+from ozon_mcp.errors import OzonError
 from ozon_mcp.session.transport import OzonSession
 from ozon_mcp.settings import get_settings
 
@@ -77,4 +78,14 @@ def _close_captured(session: OzonSession | None) -> None:
 
 async def run_blocking[T](work: Callable[[], T]) -> T:
     """Await blocking session work off the event loop."""
-    return await asyncio.get_running_loop().run_in_executor(get_executor(), work)
+    return await asyncio.get_running_loop().run_in_executor(get_executor(), lambda: _run_session_work(work))
+
+
+def _run_session_work[T](work: Callable[[], T]) -> T:
+    try:
+        return work()
+    except (SystemExit, KeyboardInterrupt, asyncio.CancelledError) as error:
+        # Signals arrive on the main thread. A worker's exit or cancellation
+        # must not cross the MCP task boundary and close its transport.
+        logger.exception("session worker interrupted (%s)", type(error).__name__)
+        raise OzonError("Session worker interrupted; this call failed and was not retried.") from None
