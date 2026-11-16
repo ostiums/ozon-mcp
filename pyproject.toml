@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 ozon-mcp = "ozon_mcp.__main__:main"
+ozon-mcp-supervised = "ozon_mcp.stdio_supervisor:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -276,6 +276,41 @@ Search uses the composer JSON API. A 3xx response is reported and not followed; 
 
 ## Running
 
+### Stdio hosts without reconnection
+
+Use `ozon-mcp-supervised` or `python -m ozon_mcp.stdio_supervisor` with
+`OZON_TRANSPORT=stdio`. The supervisor keeps the host's pipes open when the
+Python server exits. It restarts the child and repeats the successful MCP
+initialization before forwarding new requests. Interrupted requests receive
+JSON-RPC error `-32001`. Tool calls are never replayed, because a write may
+have completed before its reply was lost.
+
+Set `OZON_SUPERVISOR_LOG` to choose the log file. In a virtual environment,
+the default is `logs/stdio-supervisor.log` beside the virtual environment.
+Child stderr and restart exit statuses go to that file. Stdout contains only
+JSON-RPC. Closing host stdin or sending SIGTERM or SIGINT stops the supervisor
+and its child. The shared browser owner retains its independent lease lifetime.
+Keep `ozon-mcp` or `python -m ozon_mcp` for HTTP and SSE.
+
+For an existing Python launcher that sets deployment environment variables,
+keep those assignments and replace `from ozon_mcp.__main__ import main` with
+`from ozon_mcp.stdio_supervisor import main`. Keep its path and arguments.
+Installing a package can overwrite console scripts, so back up and restore
+custom launchers during upgrades. Replacing an executable cannot revive a
+host connection that already closed. That host must create a new MCP client.
+
+To check a deployed public launcher with CART=1, WRITES=0, and ORDERS=0,
+run from this checkout:
+
+```bash
+python -m scripts.verify_resilient_stdio /path/to/venv/bin/ozon-mcp
+```
+
+The check reads session status, kills only its own MCP child, and verifies
+tools and status through the same supervisor pipe. It leaves the shared
+browser owner running and performs no account writes. The isolated fault
+matrix is `uv run pytest tests/server/test_stdio_browser_crashes.py --no-cov`.
+
 ```bash
 docker build -t ozon-mcp .
 
